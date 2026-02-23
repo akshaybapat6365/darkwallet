@@ -8,5 +8,8 @@ export const validateMnemonic = (mnemonic: string): boolean => validate(mnemonic
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
+export const mnemonicEntropyBytes = (mnemonic: string): Uint8Array =>
+  mnemonicToEntropy(mnemonic.trim(), wordlist);
+
 export const mnemonicEntropyHex = (mnemonic: string): string =>
-  bytesToHex(mnemonicToEntropy(mnemonic.trim(), wordlist));
+  bytesToHex(mnemonicEntropyBytes(mnemonic));

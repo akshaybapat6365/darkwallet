@@ -5,6 +5,7 @@ export const EXTENSION_STORAGE_KEYS = {
 
 export const RUNTIME_CONFIG = {
   backendBaseUrl: import.meta.env.VITE_EXTENSION_BACKEND_BASE_URL ?? 'http://127.0.0.1:4000',
+  apiSecret: import.meta.env.VITE_EXTENSION_API_SECRET ?? '',
   network: (import.meta.env.VITE_EXTENSION_NETWORK ?? 'standalone') as
     | 'standalone'
     | 'preview'

@@ -5,8 +5,19 @@ export class ExtensionApiError extends Error {
   requestId?: string;
 }
 
+const withAuthHeader = (headers?: HeadersInit): Headers => {
+  const merged = new Headers(headers);
+  if (RUNTIME_CONFIG.apiSecret.trim()) {
+    merged.set('authorization', `Bearer ${RUNTIME_CONFIG.apiSecret.trim()}`);
+  }
+  return merged;
+};
+
 export const extensionFetch = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(`${RUNTIME_CONFIG.backendBaseUrl}${path}`, init);
+  const response = await fetch(`${RUNTIME_CONFIG.backendBaseUrl}${path}`, {
+    ...init,
+    headers: withAuthHeader(init?.headers),
+  });
   const text = await response.text();
   const data = text ? (JSON.parse(text) as unknown) : null;
 

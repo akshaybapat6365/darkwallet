@@ -107,6 +107,51 @@ const runProbe = async (fn: () => Promise<unknown>): Promise<ProbeResult> => {
   }
 };
 
+const defaultBlockfrostBaseUrl = (network: AppConfig['network']): string => {
+  if (network === 'preview') return 'https://cardano-preview.blockfrost.io/api/v0';
+  if (network === 'preprod') return 'https://cardano-preprod.blockfrost.io/api/v0';
+  return 'https://cardano-mainnet.blockfrost.io/api/v0';
+};
+
+const submitCardanoTransaction = async (config: AppConfig, txCborHex: string): Promise<string> => {
+  const projectId = config.blockfrostProjectId?.trim();
+  if (!projectId) {
+    fail(503, 'Cardano relay unavailable: BLOCKFROST_PROJECT_ID is not configured');
+  }
+  const relayProjectId = projectId as string;
+
+  const cleanHex = txCborHex.trim().replace(/^0x/i, '');
+  if (!/^[0-9a-fA-F]+$/.test(cleanHex) || cleanHex.length % 2 !== 0) {
+    fail(400, 'txCborHex must be an even-length hex string');
+  }
+
+  const bytes = Uint8Array.from(
+    { length: cleanHex.length / 2 },
+    (_, index) => Number.parseInt(cleanHex.slice(index * 2, index * 2 + 2), 16),
+  );
+  const baseUrl = config.blockfrostBaseUrl ?? defaultBlockfrostBaseUrl(config.network);
+  const endpoint = `${baseUrl}/tx/submit`;
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      project_id: relayProjectId,
+      'content-type': 'application/cbor',
+    },
+    body: bytes,
+  });
+
+  const bodyText = await response.text();
+  if (!response.ok) {
+    fail(response.status >= 400 && response.status < 500 ? response.status : 502, `Cardano relay failed: ${bodyText}`);
+  }
+  const txHash = bodyText.trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(txHash)) {
+    fail(502, `Cardano relay returned invalid tx hash: ${txHash}`);
+  }
+  return txHash.toLowerCase();
+};
+
 export const buildServer = async (params: {
   config: AppConfig;
   pickup: PickupService;
@@ -239,6 +284,22 @@ export const buildServer = async (params: {
   app.post('/api/clinic/init', async () => {
     return await params.pickup.initClinic();
   });
+
+  app.post(
+    '/api/v1/cardano/submit-tx',
+    {
+      preHandler: app.rateLimit({ max: 30, timeWindow: '1 minute' }),
+    },
+    async (req) => {
+      const body = z
+        .object({
+          txCborHex: z.string().min(2),
+        })
+        .parse(req.body);
+      const txHash = await submitCardanoTransaction(params.config, body.txCborHex);
+      return { txHash };
+    },
+  );
 
   app.post('/api/patient', async () => {
     return await params.pickup.createPatient();

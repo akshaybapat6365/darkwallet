@@ -58,8 +58,8 @@ export const AttestationPage = () => {
           walletAddress: status.publicAddress,
           assetFingerprint,
           signedPayloadHex: challenge.payloadHex,
-          signatureHex: signature.signature,
-          keyHex: signature.key,
+          coseSign1Hex: signature.signature,
+          coseKeyHex: signature.key,
         }),
       });
       setResult(response);

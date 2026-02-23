@@ -1,6 +1,6 @@
 const injectProvider = () => {
   const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('src/injected/provider.ts');
+  script.src = chrome.runtime.getURL('src/injected/provider.js');
   script.type = 'module';
   script.setAttribute('data-darkwallet-provider', 'true');
   (document.head || document.documentElement).appendChild(script);

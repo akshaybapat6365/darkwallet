@@ -25,7 +25,7 @@ export default defineManifest({
   ],
   web_accessible_resources: [
     {
-      resources: ['src/injected/provider.ts'],
+      resources: ['src/injected/provider.js'],
       matches: ['<all_urls>'],
     },
   ],

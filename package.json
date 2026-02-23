@@ -23,6 +23,7 @@
     "test:watch": "vitest",
     "test:coverage:backend": "vitest --run services/prover/src/test --coverage --coverage.provider=v8 --coverage.include='services/prover/src/auth.ts' --coverage.include='services/prover/src/attestation/cip30-verify.ts' --coverage.include='services/prover/src/attestation/oracle-signer.ts' --coverage.include='services/prover/src/attestation/service.ts' --coverage.include='services/prover/src/intents/**' --coverage.include='services/prover/src/utils/**' --coverage.exclude='services/prover/src/test/**' --coverage.reportsDirectory='coverage/backend' --coverage.reporter=text --coverage.reporter=json-summary --coverage.thresholds.lines=85",
     "test:e2e": "playwright test",
+    "test:e2e:extension": "npm run build:extension && playwright test -c playwright.extension.config.ts",
     "test:sim": "npm -w midnight/contract run build && npm -w services/prover run build && vitest --run midnight/contract/src/test services/prover/src/test",
     "lint": "eslint \"src/**/*.{js,jsx,ts,tsx}\" \"apps/extension/src/**/*.{ts,tsx}\" \"apps/extension/*.{ts,tsx}\" \"services/prover/src/**/*.ts\" \"e2e/**/*.ts\" \"scripts/**/*.mjs\"",
     "audit:prod": "node scripts/audit-ci.mjs",

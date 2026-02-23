@@ -56,8 +56,8 @@ export const PrescriptionPage = () => {
           intentId: prepared.intentId,
           walletAddress: status.publicAddress,
           signedPayloadHex: prepared.payloadHex,
-          signatureHex: signature.signature,
-          keyHex: signature.key,
+          coseSign1Hex: signature.signature,
+          coseKeyHex: signature.key,
         }),
       });
 
