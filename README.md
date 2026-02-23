@@ -72,6 +72,10 @@ npm run dev:demo
 Use the production stack:
 
 ```bash
+cp .env.example .env
+```
+
+```bash
 docker compose -f docker-compose.production.yml up --build
 ```
 

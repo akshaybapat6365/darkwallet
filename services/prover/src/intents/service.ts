@@ -6,7 +6,7 @@ import { verifyCip30Signature } from '../attestation/cip30-verify.js';
 import type { BlockfrostClient } from '../attestation/blockfrost-client.js';
 import type { AppConfig } from '../config.js';
 import type { PreparedIntent } from '../state/intent-store.js';
-import type { IntentAction, IntentStore } from '../state/intent-store.js';
+import type { IntentStore } from '../state/intent-store.js';
 import type { RelayerGasStore } from '../state/relayer-gas-store.js';
 import type { PersistedState, StateStore } from '../state/store.js';
 

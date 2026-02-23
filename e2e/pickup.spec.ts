@@ -579,8 +579,7 @@ test('reject signature: user declines wallet signature request', async ({ page }
   const errorPanel = page.getByTestId('error-panel');
   await expect(errorPanel).toBeVisible();
   await expect(errorPanel).toContainText(/rejected signature/i);
-  await page.getByTestId('error-details').click();
-  await expect(page.getByText(/stage: intent-sign/i)).toBeVisible();
+  await expect(errorPanel).toContainText(/stage: intent-sign/i);
 });
 
 test('tampered signature submit is rejected', async ({ page }) => {
@@ -591,8 +590,7 @@ test('tampered signature submit is rejected', async ({ page }) => {
   const errorPanel = page.getByTestId('error-panel');
   await expect(errorPanel).toBeVisible();
   await expect(errorPanel).toContainText(/signature verification failed/i);
-  await page.getByTestId('error-details').click();
-  await expect(page.getByText(/stage: intent-submit/i)).toBeVisible();
+  await expect(errorPanel).toContainText(/stage: intent-submit/i);
 });
 
 test('attestation verify fails when ownership check fails', async ({ page }) => {

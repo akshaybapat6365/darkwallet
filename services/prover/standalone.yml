@@ -17,11 +17,11 @@ services:
     ports:
       - '5432:5432'
     environment:
-      POSTGRES_DB: midlight
-      POSTGRES_USER: midlight
-      POSTGRES_PASSWORD: midlight
+      POSTGRES_DB: darkwallet
+      POSTGRES_USER: darkwallet
+      POSTGRES_PASSWORD: darkwallet
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U midlight -d midlight']
+      test: ['CMD-SHELL', 'pg_isready -U darkwallet -d darkwallet']
       interval: 5s
       timeout: 5s
       retries: 20

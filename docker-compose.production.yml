@@ -6,15 +6,21 @@ services:
     container_name: darkwallet-prover
     restart: unless-stopped
     env_file:
-      - services/prover/.env.example
+      - path: .env
+        required: false
     environment:
-      MIDLIGHT_REDIS_URL: redis://redis:6379
+      MIDLIGHT_REDIS_URL: redis://:${REDIS_PASSWORD:-darkwallet}@redis:6379
       MIDLIGHT_DATABASE_URL: postgres://darkwallet:${POSTGRES_PASSWORD:-darkwallet}@postgres:5432/darkwallet
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
     expose:
       - "4000"
 

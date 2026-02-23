@@ -21,7 +21,8 @@
     "test:coverage:backend": "vitest --run services/prover/src/test --coverage --coverage.provider=v8 --coverage.include='services/prover/src/auth.ts' --coverage.include='services/prover/src/attestation/cip30-verify.ts' --coverage.include='services/prover/src/attestation/oracle-signer.ts' --coverage.include='services/prover/src/attestation/service.ts' --coverage.include='services/prover/src/intents/**' --coverage.include='services/prover/src/utils/**' --coverage.exclude='services/prover/src/test/**' --coverage.reportsDirectory='coverage/backend' --coverage.reporter=text --coverage.reporter=json-summary --coverage.thresholds.lines=70",
     "test:e2e": "playwright test",
     "test:sim": "npm -w midnight/contract run build && npm -w services/prover run build && vitest --run midnight/contract/src/test services/prover/src/test",
-    "lint": "eslint \"src/**/*.{js,jsx,ts,tsx}\"",
+    "lint": "eslint \"src/**/*.{js,jsx,ts,tsx}\" \"services/prover/src/**/*.ts\" \"e2e/**/*.ts\" \"scripts/**/*.mjs\"",
+    "audit:prod": "node scripts/audit-ci.mjs",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],

@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+coverage
+playwright-report
+test-results
+midnight/contract/dist
+services/prover/dist
+services/prover/.data
+services/prover/midlight-private-state*
+services/prover/darkwallet-private-state*
