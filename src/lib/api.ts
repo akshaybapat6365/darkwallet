@@ -34,6 +34,11 @@ export type HealthResponse = {
   ok: boolean;
   network: string;
   processRole?: 'all' | 'api' | 'worker';
+  probes?: {
+    redis: { ok: boolean; latencyMs: number; error?: string; mode?: 'enabled' | 'disabled' };
+    postgres: { ok: boolean; latencyMs: number; error?: string; mode?: 'enabled' | 'disabled' };
+    proofServer: { ok: boolean; latencyMs: number; error?: string; mode?: 'enabled' | 'disabled' };
+  };
   features: {
     enableIntentSigning: boolean;
     enableAttestationEnforcement: boolean;
@@ -66,6 +71,37 @@ export type PickupIndexRecord = {
 export type PatientRecord = {
   patientId: string;
   patientPublicKeyHex: string;
+};
+
+export type RegisterAuthorizationBody = {
+  rxId: string | number;
+  pharmacyIdHex: string;
+  patientId?: string;
+  patientPublicKeyHex?: string;
+  attestationHash?: string;
+  expiresAt?: string | number;
+};
+
+export type RegisterBatchResponse = {
+  count: number;
+  items: Array<{
+    commitmentHex: string;
+    attestationHashHex: string;
+    expiresAt: string;
+    rxId: string;
+    pharmacyIdHex: string;
+    patientPublicKeyHex: string;
+  }>;
+  txId: string;
+  blockHeight: number;
+  contractAddress: string;
+};
+
+export type TransferIssuerResponse = {
+  issuerPublicKeyHex: string;
+  txId: string;
+  blockHeight: number;
+  contractAddress: string;
 };
 
 type RequestInit = {
@@ -207,14 +243,7 @@ export type IntentAction = 'registerAuthorization' | 'redeem';
 export type IntentPrepareRequest =
   | {
     action: 'registerAuthorization';
-    body: {
-      rxId: string | number;
-      pharmacyIdHex: string;
-      patientId?: string;
-      patientPublicKeyHex?: string;
-      attestationHash?: string;
-      expiresAt?: string | number;
-    };
+    body: RegisterAuthorizationBody;
   }
   | {
     action: 'redeem';
@@ -261,14 +290,11 @@ export const api = {
   deployJob: () => request<{ jobId: string }>('/api/jobs/deploy', { method: 'POST' }),
   join: (contractAddress: string) => request<{ contractAddress: string }>('/api/contract/join', { method: 'POST', body: { contractAddress } }),
   contractState: () => request<{ ledgerState: unknown }>('/api/contract/state'),
-  registerAuthorizationJob: (body: {
-    rxId: string | number;
-    pharmacyIdHex: string;
-    patientId?: string;
-    patientPublicKeyHex?: string;
-    attestationHash?: string;
-    expiresAt?: string | number;
-  }) => request<{ jobId: string }>('/api/jobs/register', { method: 'POST', body }),
+  registerAuthorizationJob: (body: RegisterAuthorizationBody) => request<{ jobId: string }>('/api/jobs/register', { method: 'POST', body }),
+  clinicRegisterBatch: (items: RegisterAuthorizationBody[]) =>
+    request<RegisterBatchResponse>('/api/v1/clinic/register-batch', { method: 'POST', body: { items } }),
+  clinicTransferIssuer: (body?: { newIssuerSecretKeyHex?: string }) =>
+    request<TransferIssuerResponse>('/api/v1/clinic/transfer-issuer', { method: 'POST', body: body ?? {} }),
   redeemJob: (body: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string; expiresAt?: string | number }) =>
     request<{ jobId: string }>('/api/jobs/redeem', { method: 'POST', body }),
   clinicRevoke: (body: {
@@ -292,8 +318,10 @@ export const api = {
       issuerPublicKeyHex: string | null;
     }>('/api/pharmacy/check', { method: 'POST', body }),
   job: (jobId: string) => request<{ job: JobSnapshot | null }>(`/api/jobs/${jobId}`),
-  pickups: (limit = 100) =>
-    request<{ pickups: PickupIndexRecord[] }>(`/api/pickups?limit=${encodeURIComponent(String(limit))}`),
+  pickups: (limit = 100, offset = 0) =>
+    request<{ pickups: PickupIndexRecord[] }>(
+      `/api/pickups?limit=${encodeURIComponent(String(limit))}&offset=${encodeURIComponent(String(offset))}`,
+    ),
   attestationChallenge: (body: AttestationChallengeRequest) =>
     request<AttestationChallengeResponse>('/api/v1/attestations/challenge', { method: 'POST', body }),
   attestationVerify: (body: AttestationVerifyRequest) =>

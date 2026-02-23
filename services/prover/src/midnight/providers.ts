@@ -9,7 +9,7 @@ import type { WalletProvider, MidnightProvider } from '@midnight-ntwrk/midnight-
 
 const DEFAULT_HTTP_TIMEOUT_MS = 60 * 60 * 1000;
 const httpTimeoutMs = (() => {
-  const raw = process.env.MIDLIGHT_HTTP_TIMEOUT_MS;
+  const raw = process.env.DARKWALLET_HTTP_TIMEOUT_MS ?? process.env.MIDLIGHT_HTTP_TIMEOUT_MS;
   if (!raw) return DEFAULT_HTTP_TIMEOUT_MS;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HTTP_TIMEOUT_MS;

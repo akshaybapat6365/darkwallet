@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import { logger } from './logger.js';
 
 export type Network = 'standalone' | 'preview' | 'preprod' | 'mainnet';
 
@@ -87,7 +88,7 @@ const parseNetwork = (raw: string | undefined): Network => {
 const parseProcessRole = (raw: string | undefined): 'all' | 'api' | 'worker' => {
   const v = (raw ?? 'all').toLowerCase();
   if (v === 'all' || v === 'api' || v === 'worker') return v;
-  throw new Error(`Invalid MIDLIGHT_PROCESS_ROLE: ${raw}`);
+  throw new Error(`Invalid MIDLIGHT_PROCESS_ROLE / DARKWALLET_PROCESS_ROLE: ${raw}`);
 };
 
 const parsePort = (raw: string | undefined): number => {
@@ -114,8 +115,7 @@ const readCompatEnv = (legacyName: string, modernName: string): string | undefin
 
   const legacyValue = process.env[legacyName];
   if (legacyValue != null && legacyValue.trim() !== '') {
-    // eslint-disable-next-line no-console
-    console.warn(`[config] ${legacyName} is deprecated; use ${modernName}`);
+    logger.warn({ legacyName, modernName }, 'Legacy environment variable is deprecated');
     return legacyValue;
   }
 

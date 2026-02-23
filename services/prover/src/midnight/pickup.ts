@@ -11,6 +11,7 @@ import type { MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 import type { PickupIndexStore } from '../state/pickup-index.js';
 import type { StateStore } from '../state/store.js';
 import { bytesToHex, hexToBytesN, randomBytes32, strip0x, zeroBytes } from '../utils/hex.js';
+import { logger } from '../logger.js';
 
 export type PickupCircuits = ImpureCircuitId<Contract<PickupPrivateState>>;
 
@@ -47,6 +48,17 @@ const asBigUint64 = (v: string | number) => {
 const asBigUint64OrZero = (v?: string | number | null) => {
   if (v == null || v === '') return 0n;
   return asBigUint64(v);
+};
+
+const MAX_BATCH_SIZE = 8;
+
+type RegisterAuthorizationInput = {
+  rxId: string | number;
+  pharmacyIdHex: string;
+  patientId?: string;
+  patientPublicKeyHex?: string;
+  attestationHash?: string;
+  expiresAt?: string | number;
 };
 
 const normalizeContractAddress = (s: string) => {
@@ -151,11 +163,15 @@ export class PickupService {
         blockHeight: deployed.deployTxData.public.blockHeight,
       };
     } catch (err) {
-      if (process.env.MIDLIGHT_DEBUG_ERRORS === '1') {
-        // eslint-disable-next-line no-console
-        console.error(`\n[midlight] deployContract failed: ${inspect(err, { depth: 12, maxArrayLength: 50 })}`);
-        // eslint-disable-next-line no-console
-        console.error(`[midlight] deployContract failed (cause): ${inspect((err as any)?.cause, { depth: 12, maxArrayLength: 50 })}`);
+      if ((process.env.DARKWALLET_DEBUG_ERRORS ?? process.env.MIDLIGHT_DEBUG_ERRORS) === '1') {
+        logger.error(
+          {
+            err,
+            details: inspect(err, { depth: 12, maxArrayLength: 50 }),
+            causeDetails: inspect((err as { cause?: unknown })?.cause, { depth: 12, maxArrayLength: 50 }),
+          },
+          'deployContract failed',
+        );
       }
       throw err;
     }
@@ -211,14 +227,7 @@ export class PickupService {
     };
   }
 
-  async registerAuthorization(params: {
-    rxId: string | number;
-    pharmacyIdHex: string;
-    patientId?: string;
-    patientPublicKeyHex?: string;
-    attestationHash?: string;
-    expiresAt?: string | number;
-  }) {
+  async registerAuthorization(params: RegisterAuthorizationInput) {
     const state = await this.#store.read();
     if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
 
@@ -270,6 +279,95 @@ export class PickupService {
       blockHeight: out.blockHeight,
     });
     return out;
+  }
+
+  async registerAuthorizationBatch(params: { items: RegisterAuthorizationInput[] }) {
+    if (!Array.isArray(params.items) || params.items.length < 1 || params.items.length > MAX_BATCH_SIZE) {
+      throw new Error(`items must contain between 1 and ${MAX_BATCH_SIZE} entries`);
+    }
+
+    const state = await this.#store.read();
+    if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
+
+    const clinicSk = await this.#ensureClinicSecretKey();
+
+    const joined = await findDeployedContract(this.#providers, {
+      contractAddress: state.contractAddress,
+      compiledContract: this.#compiledContract,
+      privateStateId: CLINIC_ID,
+      initialPrivateState: makePrivateState({ issuerSecretKey: clinicSk, patientSecretKey: zeroBytes(32) }),
+    });
+
+    const prepared = params.items.map((item) => {
+      const patientPk =
+        item.patientPublicKeyHex != null
+          ? asBytes32(item.patientPublicKeyHex)
+          : (() => {
+              if (!item.patientId) throw new Error('patientId or patientPublicKeyHex required');
+              const p = state.patients?.[item.patientId];
+              if (!p) throw new Error('Unknown patientId');
+              return asBytes32(p.patientPublicKeyHex);
+            })();
+
+      const rxId = asBigUint64(item.rxId);
+      const expiresAt = asBigUint64OrZero(item.expiresAt);
+      const pharmacyId = asBytes32(item.pharmacyIdHex);
+      const oracleAttestationHash = asBytes32OrZero(item.attestationHash);
+      const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAt);
+      return { rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAt, commitment };
+    });
+
+    const padded = [...prepared];
+    while (padded.length < MAX_BATCH_SIZE) {
+      padded.push({
+        rxId: 0n,
+        pharmacyId: zeroBytes(32),
+        patientPk: zeroBytes(32),
+        oracleAttestationHash: zeroBytes(32),
+        expiresAt: 0n,
+        commitment: zeroBytes(32),
+      });
+    }
+
+    const args: Array<bigint | Uint8Array> = [];
+    for (const item of padded) {
+      args.push(item.rxId, item.pharmacyId, item.patientPk, item.oracleAttestationHash, item.expiresAt);
+    }
+
+    const tx = await (joined.callTx as any).registerBatch(BigInt(prepared.length), ...args);
+
+    const contractAddress = joined.deployTxData.public.contractAddress;
+    const items = prepared.map((item) => ({
+      commitmentHex: bytesToHex(item.commitment),
+      attestationHashHex: bytesToHex(item.oracleAttestationHash),
+      expiresAt: item.expiresAt.toString(10),
+      rxId: item.rxId.toString(10),
+      pharmacyIdHex: bytesToHex(item.pharmacyId),
+      patientPublicKeyHex: bytesToHex(item.patientPk),
+    }));
+
+    await Promise.all(
+      items.map(async (item) => {
+        await this.#pickupIndex.recordAuthorization({
+          contractAddress,
+          commitmentHex: item.commitmentHex,
+          expiresAt: item.expiresAt,
+          rxId: item.rxId,
+          pharmacyIdHex: item.pharmacyIdHex,
+          patientPublicKeyHex: item.patientPublicKeyHex,
+          txId: tx.public.txId,
+          blockHeight: tx.public.blockHeight,
+        });
+      }),
+    );
+
+    return {
+      count: items.length,
+      items,
+      txId: tx.public.txId,
+      blockHeight: tx.public.blockHeight,
+      contractAddress,
+    };
   }
 
   async redeem(params: {
@@ -425,6 +523,44 @@ export class PickupService {
       rxId: rxId.toString(10),
       pharmacyIdHex: bytesToHex(pharmacyId),
       patientPublicKeyHex: bytesToHex(patientPk),
+      txId: tx.public.txId,
+      blockHeight: tx.public.blockHeight,
+      contractAddress: joined.deployTxData.public.contractAddress,
+    };
+  }
+
+  async transferIssuer(params: { newIssuerSecretKeyHex?: string } = {}) {
+    const state = await this.#store.read();
+    if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
+
+    const currentIssuerSecretKey = await this.#ensureClinicSecretKey();
+    const nextIssuerSecretKey = params.newIssuerSecretKeyHex
+      ? asBytes32(params.newIssuerSecretKeyHex)
+      : randomBytes32();
+    const nextIssuerPublicKey = pureCircuits.issuerPublicKey(nextIssuerSecretKey);
+
+    const joined = await findDeployedContract(this.#providers, {
+      contractAddress: state.contractAddress,
+      compiledContract: this.#compiledContract,
+      privateStateId: CLINIC_ID,
+      initialPrivateState: makePrivateState({
+        issuerSecretKey: currentIssuerSecretKey,
+        patientSecretKey: zeroBytes(32),
+      }),
+    });
+
+    const tx = await (joined.callTx as any).transferIssuer(nextIssuerPublicKey);
+
+    await this.#store.update((prev) => ({
+      ...prev,
+      clinic: {
+        ...(prev.clinic ?? {}),
+        issuerSecretKeyHex: bytesToHex(nextIssuerSecretKey),
+      },
+    }));
+
+    return {
+      issuerPublicKeyHex: bytesToHex(nextIssuerPublicKey),
       txId: tx.public.txId,
       blockHeight: tx.public.blockHeight,
       contractAddress: joined.deployTxData.public.contractAddress,

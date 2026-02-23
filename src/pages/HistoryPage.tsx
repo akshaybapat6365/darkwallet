@@ -1,15 +1,61 @@
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 
+import { Button } from '../components/Button';
+import { Skeleton } from '../components/ui/Skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { api } from '../lib/api';
+import { api, type PickupIndexRecord } from '../lib/api';
 import { truncate } from '../lib/utils';
 
+const PAGE_SIZE = 20;
+
+const mergeByCommitment = (prev: PickupIndexRecord[], next: PickupIndexRecord[]) => {
+  const seen = new Set<string>();
+  const out: PickupIndexRecord[] = [];
+  for (const row of [...prev, ...next]) {
+    if (seen.has(row.commitmentHex)) continue;
+    seen.add(row.commitmentHex);
+    out.push(row);
+  }
+  return out;
+};
+
+const HistorySkeleton = () => (
+  <section className="space-y-4 page-enter" aria-busy="true" aria-live="polite">
+    <Card className="glass">
+      <CardHeader>
+        <Skeleton className="h-7 w-56" />
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </CardContent>
+    </Card>
+  </section>
+);
+
 export const HistoryPage = () => {
+  const [offset, setOffset] = React.useState(0);
+  const [rows, setRows] = React.useState<PickupIndexRecord[]>([]);
+  const [hasMore, setHasMore] = React.useState(true);
+
   const history = useQuery({
-    queryKey: ['pickups-history'],
-    queryFn: () => api.pickups(200),
-    refetchInterval: 10_000,
+    queryKey: ['pickups-history', offset],
+    queryFn: () => api.pickups(PAGE_SIZE, offset),
+    refetchInterval: offset === 0 ? 10_000 : false,
   });
+
+  React.useEffect(() => {
+    if (!history.data) return;
+    const next = history.data.pickups;
+    setRows((prev) => (offset === 0 ? next : mergeByCommitment(prev, next)));
+    setHasMore(next.length === PAGE_SIZE);
+  }, [history.data, offset]);
+
+  if (history.isLoading && offset === 0 && rows.length === 0) {
+    return <HistorySkeleton />;
+  }
 
   return (
     <section className="space-y-4 page-enter">
@@ -31,7 +77,7 @@ export const HistoryPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {(history.data?.pickups ?? []).map((item) => (
+                {rows.map((item) => (
                   <tr key={item.commitmentHex} className="border-b border-border/40">
                     <td className="py-2 pr-3">{item.rxId}</td>
                     <td className="py-2 pr-3 font-mono">{truncate(item.pharmacyIdHex, 16)}</td>
@@ -48,9 +94,21 @@ export const HistoryPage = () => {
               </tbody>
             </table>
           </div>
-          {!history.data?.pickups.length ? (
+
+          {!rows.length ? (
             <div className="mt-4 text-sm text-muted-foreground">No prescriptions recorded yet.</div>
-          ) : null}
+          ) : (
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <div className="text-xs text-muted-foreground">Showing {rows.length} records</div>
+              <Button
+                variant="outline"
+                onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
+                disabled={!hasMore || history.isFetching}
+              >
+                {history.isFetching ? 'Loading…' : hasMore ? 'Load More' : 'No More Records'}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </section>

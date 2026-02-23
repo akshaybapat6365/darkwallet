@@ -46,7 +46,7 @@ export interface PickupIndexStore {
     txId: string;
     blockHeight: number;
   }): Promise<void>;
-  list(limit?: number): Promise<PickupRecord[]>;
+  list(limit?: number, offset?: number): Promise<PickupRecord[]>;
   close?(): Promise<void>;
 }
 
@@ -212,7 +212,7 @@ export class PgPickupIndexStore implements PickupIndexStore {
     );
   }
 
-  async list(limit = 100): Promise<PickupRecord[]> {
+  async list(limit = 100, offset = 0): Promise<PickupRecord[]> {
     const out = await this.#pool.query<PickupRecord>(
       `
         SELECT
@@ -234,8 +234,9 @@ export class PgPickupIndexStore implements PickupIndexStore {
         FROM pickup_index
         ORDER BY updated_at DESC
         LIMIT $1
+        OFFSET $2
       `,
-      [limit],
+      [limit, offset],
     );
     return out.rows;
   }

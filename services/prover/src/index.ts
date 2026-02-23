@@ -19,6 +19,7 @@ import { createIntentStore } from './state/intent-store.js';
 import { createPickupIndexStore } from './state/pickup-index.js';
 import { createRelayerGasStore } from './state/relayer-gas-store.js';
 import { createStateStore } from './state/store.js';
+import { logger } from './logger.js';
 import type { PickupPrivateState } from '@darkwallet/pickup-contract';
 
 const currentDir = path.resolve(new URL(import.meta.url).pathname, '..');
@@ -44,8 +45,7 @@ if (config.network !== 'standalone' && !config.oraclePrivateKeyHex) {
   throw new Error('MIDLIGHT_ORACLE_PRIVATE_KEY or DARKWALLET_ORACLE_PRIVATE_KEY is required for preview/preprod/mainnet networks');
 }
 if (!config.oraclePrivateKeyHex) {
-  // eslint-disable-next-line no-console
-  console.warn('WARNING: Using insecure deterministic oracle key. For development only.');
+  logger.warn('Using insecure deterministic oracle key. For development only.');
 }
 if (config.network !== 'standalone' && !config.apiSecret) {
   throw new Error('MIDLIGHT_API_SECRET or DARKWALLET_API_SECRET is required for non-standalone networks');
@@ -120,8 +120,7 @@ const blockfrost = config.blockfrostProjectId
     })
   : null;
 if (!blockfrost) {
-  // eslint-disable-next-line no-console
-  console.warn('WARNING: BLOCKFROST_PROJECT_ID is not configured. Attestation ownership verification is disabled.');
+  logger.warn('BLOCKFROST_PROJECT_ID is not configured. Attestation ownership verification is disabled.');
 }
 const oracleFallbackSk = crypto.createHash('sha256').update(`darkwallet:${config.network}:oracle:dev`).digest('hex');
 const oracleSigner = await createOracleSigner({
@@ -163,9 +162,11 @@ if (runApi) {
   });
 
   await app.listen({ port: config.port, host: '127.0.0.1' });
+  logger.info({ port: config.port, network: config.network, processRole: config.processRole }, 'Prover API started');
 }
 
 const shutdown = async () => {
+  logger.info('Shutdown signal received, closing services');
   await Promise.allSettled([
     app?.close() ?? Promise.resolve(),
     jobs.close(),

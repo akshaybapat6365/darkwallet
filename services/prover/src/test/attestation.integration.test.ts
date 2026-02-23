@@ -113,4 +113,49 @@ describe('attestation verification integration', () => {
       }),
     ).rejects.toThrow(/does not currently own/i);
   });
+
+  it('returns service-unavailable when Blockfrost is not configured', async () => {
+    const service = new AttestationService({
+      store: new InMemoryAttestationStore(),
+      blockfrost: null,
+      oracleSigner: {
+        publicKeyHex: '11'.repeat(32),
+        domainTag: 'darkwallet:oracle:v1',
+        async sign(payload) {
+          return {
+            algorithm: 'ed25519' as const,
+            domainTag: 'darkwallet:oracle:v1',
+            payload,
+            payloadHashHex: '22'.repeat(32),
+            publicKeyHex: '11'.repeat(32),
+            signatureHex: '33'.repeat(64),
+          };
+        },
+      },
+      config: {
+        network: 'preview',
+        ttlMs: 60_000,
+        maxClockSkewMs: 1_000,
+      },
+    });
+
+    const challenge = await service.createChallenge({
+      assetFingerprint: 'asset1x',
+      walletAddress: null,
+      midnightAddress: null,
+    });
+    const signature = await createWalletFixture(challenge.payloadHex);
+
+    await expect(
+      service.verifyChallenge({
+        challengeId: challenge.challengeId,
+        walletAddress: signature.walletAddressHex,
+        midnightAddress: null,
+        assetFingerprint: 'asset1x',
+        signedPayloadHex: signature.signedPayloadHex,
+        coseSign1Hex: signature.coseSign1Hex,
+        coseKeyHex: signature.coseKeyHex,
+      }),
+    ).rejects.toThrow(/BLOCKFROST_PROJECT_ID is not configured/i);
+  });
 });

@@ -103,6 +103,8 @@ Mainnet additionally requires:
 See:
 - `services/prover/.env.example`
 - `docs/SECURITY.md`
+- `docs/SETUP.md`
+- `docs/DEPLOYMENT.md`
 
 ## Frontend Routes
 
@@ -127,6 +129,10 @@ Core endpoints:
 - `GET /api/v1/pickups`
 
 Full reference: `docs/API.md`.
+
+Additional docs:
+- `docs/ARCHITECTURE.md`
+- `CONTRIBUTING.md`
 
 ## Security Model Highlights
 

@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import Fastify from 'fastify';
+import compress from '@fastify/compress';
 import cors from '@fastify/cors';
 import rateLimit from 'fastify-rate-limit';
 import { z } from 'zod';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { Redis } from 'ioredis';
+import { Pool } from 'pg';
 
 import type { AttestationService } from './attestation/service.js';
 import { createAuthPreHandler } from './auth.js';
@@ -13,6 +16,7 @@ import type { ProverJobQueue } from './jobs.js';
 import type { PickupService } from './midnight/pickup.js';
 import type { PickupIndexStore } from './state/pickup-index.js';
 import type { AuditStore } from './state/audit-store.js';
+import { logger as baseLogger } from './logger.js';
 
 const hex32 = z
   .string()
@@ -33,6 +37,14 @@ const registerSchema = z
     message: 'patientId or patientPublicKeyHex required',
     path: ['patientId'],
   });
+
+const registerBatchSchema = z.object({
+  items: z.array(registerSchema).min(1).max(8),
+});
+
+const transferIssuerSchema = z.object({
+  newIssuerSecretKeyHex: hex32.optional(),
+});
 
 const redeemSchema = z.object({
   patientId: z.string().uuid(),
@@ -59,6 +71,42 @@ const fail = (statusCode: number, message: string): never => {
   throw err;
 };
 
+type ProbeResult = {
+  ok: boolean;
+  latencyMs: number;
+  error?: string;
+  mode?: 'enabled' | 'disabled';
+};
+
+const probeTimeoutMs = 1_500;
+
+const timeoutProbe = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+  await Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`probe timeout after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]);
+
+const runProbe = async (fn: () => Promise<unknown>): Promise<ProbeResult> => {
+  const startedAt = Date.now();
+  try {
+    await timeoutProbe(fn(), probeTimeoutMs);
+    return {
+      ok: true,
+      latencyMs: Date.now() - startedAt,
+      mode: 'enabled',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+      mode: 'enabled',
+    };
+  }
+};
+
 export const buildServer = async (params: {
   config: AppConfig;
   pickup: PickupService;
@@ -73,8 +121,9 @@ export const buildServer = async (params: {
     throw new Error('Both MIDLIGHT_TLS_CERT and MIDLIGHT_TLS_KEY must be set when enabling HTTPS');
   }
 
+  const logger = baseLogger.child({ component: 'server' });
   const app = Fastify({
-    logger: true,
+    loggerInstance: logger,
     ...(tlsEnabled
       ? {
           https: {
@@ -84,34 +133,103 @@ export const buildServer = async (params: {
         }
       : {}),
   });
+
+  const redisProbe = new Redis(params.config.redisUrl, {
+    lazyConnect: true,
+    enableReadyCheck: false,
+    maxRetriesPerRequest: 1,
+  });
+  redisProbe.on('error', (err: unknown) => {
+    logger.debug({ err }, 'Redis probe error');
+  });
+  const pgProbePool = params.config.databaseUrl
+    ? new Pool({
+        connectionString: params.config.databaseUrl,
+        max: 2,
+        idleTimeoutMillis: 5_000,
+      })
+    : null;
+
   await app.register(cors, { origin: true });
+  await app.register(compress, { global: true, threshold: 1024 });
   await app.register(rateLimit, {
     global: true,
-    max: 600,
+    max: 60,
     timeWindow: '1 minute',
   });
   app.addHook('preHandler', createAuthPreHandler(params.config.apiSecret));
+  app.addHook('onSend', async (request, reply, payload) => {
+    reply.header('x-request-id', request.id);
+    return payload;
+  });
+  app.addHook('onClose', async () => {
+    await Promise.allSettled([
+      redisProbe.quit(),
+      pgProbePool?.end() ?? Promise.resolve(),
+    ]);
+  });
 
   app.setErrorHandler((error, request, reply) => {
     const envelope = toErrorEnvelope(error, request.id);
+    request.log.error(
+      {
+        err: error,
+        statusCode: envelope.statusCode,
+        requestId: request.id,
+      },
+      'Request failed',
+    );
     reply.status(envelope.statusCode).send(envelope);
   });
 
   app.get(
     '/api/health',
     {
-      preHandler: app.rateLimit({ max: 60, timeWindow: '1 minute' }),
+      preHandler: app.rateLimit({ max: 120, timeWindow: '1 minute' }),
     },
     async () => {
       const status = await params.pickup.getStatus();
+      const [redis, postgres, proofServer] = await Promise.all([
+        runProbe(async () => {
+          await redisProbe.ping();
+        }),
+        pgProbePool
+          ? runProbe(async () => {
+              await pgProbePool.query('SELECT 1');
+            })
+          : Promise.resolve<ProbeResult>({
+              ok: true,
+              latencyMs: 0,
+              mode: 'disabled',
+            }),
+        runProbe(async () => {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), probeTimeoutMs);
+          try {
+            const proofHealthUrl = new URL('/health', params.config.proofServerHttpUrl).toString();
+            const response = await fetch(proofHealthUrl, { method: 'GET', signal: controller.signal });
+            if (!response.ok) {
+              throw new Error(`proof server health returned ${response.status}`);
+            }
+          } finally {
+            clearTimeout(timeout);
+          }
+        }),
+      ]);
+      const ok = redis.ok && postgres.ok && proofServer.ok;
       return {
-        ok: true,
+        ok,
         network: params.config.network,
         processRole: params.config.processRole,
         features: {
           enableIntentSigning: params.config.enableIntentSigning,
           enableAttestationEnforcement: params.config.enableAttestationEnforcement,
           allowLegacyJobEndpoints: params.config.allowLegacyJobEndpoints,
+        },
+        probes: {
+          redis,
+          postgres,
+          proofServer,
         },
         ...status,
       };
@@ -199,10 +317,16 @@ export const buildServer = async (params: {
     return reply;
   };
 
-  app.get<{ Params: { jobId: string } }>('/api/jobs/:jobId/events', async (req, reply) => {
-    const jobId = z.object({ jobId: z.string().min(1) }).parse(req.params).jobId;
-    return await attachJobSse(jobId, req, reply);
-  });
+  app.get<{ Params: { jobId: string } }>(
+    '/api/jobs/:jobId/events',
+    {
+      config: { compress: false },
+    },
+    async (req, reply) => {
+      const jobId = z.object({ jobId: z.string().min(1) }).parse(req.params).jobId;
+      return await attachJobSse(jobId, req, reply);
+    },
+  );
 
   app.post('/api/contract/join', async (req) => {
     const body = z.object({ contractAddress: z.string().min(1) }).parse(req.body);
@@ -228,9 +352,19 @@ export const buildServer = async (params: {
     return await params.pickup.registerAuthorization(body);
   });
 
+  app.post('/api/clinic/register-batch', async (req) => {
+    const body = registerBatchSchema.parse(req.body);
+    return await params.pickup.registerAuthorizationBatch(body);
+  });
+
   app.post('/api/clinic/revoke', async (req) => {
     const body = registerSchema.parse(req.body);
     return await params.pickup.revokeAuthorization(body);
+  });
+
+  app.post('/api/clinic/transfer-issuer', async (req) => {
+    const body = transferIssuerSchema.parse(req.body);
+    return await params.pickup.transferIssuer(body);
   });
 
   app.post('/api/patient/redeem', async (req) => {
@@ -254,9 +388,12 @@ export const buildServer = async (params: {
     return await params.pickup.check(body);
   });
 
-  app.get<{ Querystring: { limit?: number | string } }>('/api/pickups', async (req) => {
-    const query = z.object({ limit: z.coerce.number().int().positive().max(500).optional() }).parse(req.query);
-    return { pickups: await params.pickupIndex.list(query.limit ?? 100) };
+  app.get<{ Querystring: { limit?: number | string; offset?: number | string } }>('/api/pickups', async (req) => {
+    const query = z.object({
+      limit: z.coerce.number().int().positive().max(500).optional(),
+      offset: z.coerce.number().int().nonnegative().optional(),
+    }).parse(req.query);
+    return { pickups: await params.pickupIndex.list(query.limit ?? 100, query.offset ?? 0) };
   });
 
   const challengeSchema = z.object({
@@ -326,10 +463,22 @@ export const buildServer = async (params: {
     return out;
   };
 
-  app.post('/api/attestations/challenge', createChallenge);
+  app.post(
+    '/api/attestations/challenge',
+    {
+      preHandler: app.rateLimit({ max: 10, timeWindow: '1 minute' }),
+    },
+    createChallenge,
+  );
   app.post('/api/attestations/verify', verifyChallenge);
 
-  app.post('/api/v1/attestations/challenge', createChallenge);
+  app.post(
+    '/api/v1/attestations/challenge',
+    {
+      preHandler: app.rateLimit({ max: 10, timeWindow: '1 minute' }),
+    },
+    createChallenge,
+  );
   app.post('/api/v1/attestations/verify', verifyChallenge);
   app.get<{ Params: { attestationHash: string } }>('/api/v1/attestations/:attestationHash', async (req) => {
     const attestationHash = z.object({ attestationHash: z.string().min(1) }).parse(req.params).attestationHash;
@@ -364,7 +513,12 @@ export const buildServer = async (params: {
     return out;
   });
 
-  app.post('/api/v1/intents/submit', async (req) => {
+  app.post(
+    '/api/v1/intents/submit',
+    {
+      preHandler: app.rateLimit({ max: 30, timeWindow: '1 minute' }),
+    },
+    async (req) => {
     const body = z
       .object({
         intentId: z.string().uuid(),
@@ -424,7 +578,8 @@ export const buildServer = async (params: {
       gasSlotId: submitted.intent.gasSlotId,
       jobId,
     };
-  });
+    },
+  );
 
   app.post('/api/v1/jobs/deploy', async () => {
     return await params.jobs.enqueueDeploy();
@@ -445,6 +600,16 @@ export const buildServer = async (params: {
     return await params.pickup.revokeAuthorization(body);
   });
 
+  app.post('/api/v1/clinic/register-batch', async (req) => {
+    const body = registerBatchSchema.parse(req.body);
+    return await params.pickup.registerAuthorizationBatch(body);
+  });
+
+  app.post('/api/v1/clinic/transfer-issuer', async (req) => {
+    const body = transferIssuerSchema.parse(req.body);
+    return await params.pickup.transferIssuer(body);
+  });
+
   app.get<{ Params: { jobId: string } }>('/api/v1/jobs/:jobId', async (req) => {
     const jobId = z.object({ jobId: z.string().min(1) }).parse(req.params).jobId;
     const job = await params.jobs.get(jobId);
@@ -452,14 +617,23 @@ export const buildServer = async (params: {
     return { job };
   });
 
-  app.get<{ Params: { jobId: string } }>('/api/v1/jobs/:jobId/events', async (req, reply) => {
-    const jobId = z.object({ jobId: z.string().min(1) }).parse(req.params).jobId;
-    return await attachJobSse(jobId, req, reply);
-  });
+  app.get<{ Params: { jobId: string } }>(
+    '/api/v1/jobs/:jobId/events',
+    {
+      config: { compress: false },
+    },
+    async (req, reply) => {
+      const jobId = z.object({ jobId: z.string().min(1) }).parse(req.params).jobId;
+      return await attachJobSse(jobId, req, reply);
+    },
+  );
 
-  app.get<{ Querystring: { limit?: number | string } }>('/api/v1/pickups', async (req) => {
-    const query = z.object({ limit: z.coerce.number().int().positive().max(500).optional() }).parse(req.query);
-    return { pickups: await params.pickupIndex.list(query.limit ?? 100) };
+  app.get<{ Querystring: { limit?: number | string; offset?: number | string } }>('/api/v1/pickups', async (req) => {
+    const query = z.object({
+      limit: z.coerce.number().int().positive().max(500).optional(),
+      offset: z.coerce.number().int().nonnegative().optional(),
+    }).parse(req.query);
+    return { pickups: await params.pickupIndex.list(query.limit ?? 100, query.offset ?? 0) };
   });
 
   return app;

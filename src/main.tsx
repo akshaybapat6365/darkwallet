@@ -6,6 +6,7 @@ import { Toaster } from 'sonner';
 import App from './App';
 import './index.css';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ThemeProvider } from './providers/ThemeProvider';
 import { WalletProvider } from './providers/WalletProvider';
 
 const queryClient = new QueryClient({
@@ -22,10 +23,12 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <WalletProvider>
-          <App />
-          <Toaster richColors position="top-right" />
-        </WalletProvider>
+        <ThemeProvider>
+          <WalletProvider>
+            <App />
+            <Toaster richColors position="top-right" />
+          </WalletProvider>
+        </ThemeProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>,

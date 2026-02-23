@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import { ErrorPanel, formatUiError, type UiError } from '../components/ui/ErrorPanel';
 import { Field } from '../components/ui/Field';
 import { ResultDisplay } from '../components/ui/ResultDisplay';
+import { Skeleton } from '../components/ui/Skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { api } from '../lib/api';
 
@@ -51,6 +52,23 @@ export const DevPage = () => {
     onSuccess: (out) => setLastResult(out),
     onError: (err) => setUiError(formatUiError(err, 'create-patient')),
   });
+
+  if (health.isLoading) {
+    return (
+      <section className="space-y-4 page-enter" aria-busy="true" aria-live="polite">
+        <Card className="glass">
+          <CardHeader>
+            <Skeleton className="h-6 w-44" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Skeleton className="h-10 w-48" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </CardContent>
+        </Card>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-4 page-enter">

@@ -30,26 +30,52 @@
     --gradient: linear-gradient(135deg, hsl(var(--gradient-start)), hsl(var(--gradient-end)));
     --radius: 0.5rem;
   }
+  .light {
+    --background: 216 39% 97%;
+    --foreground: 224 32% 13%;
+    --muted: 215 28% 91%;
+    --muted-foreground: 220 12% 38%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 32% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 32% 13%;
+    --border: 216 24% 83%;
+    --input: 216 24% 83%;
+    --primary: 190 85% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 215 30% 92%;
+    --secondary-foreground: 224 32% 13%;
+    --accent: 190 85% 40%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --ring: 190 85% 40%;
+    --success: 142 70% 30%;
+    --warning: 34 95% 42%;
+    --gradient-start: 205 82% 66%;
+    --gradient-end: 274 77% 72%;
+  }
+
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
+    --background: 224 32% 9%;
+    --foreground: 210 40% 96%;
+    --muted: 224 22% 14%;
+    --muted-foreground: 214 16% 72%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --card: 224 27% 12%;
+    --card-foreground: 210 40% 96%;
+    --border: 224 24% 20%;
+    --input: 224 24% 20%;
+    --primary: 190 98% 55%;
+    --primary-foreground: 224 32% 9%;
+    --secondary: 228 20% 20%;
+    --secondary-foreground: 210 40% 96%;
+    --accent: 190 98% 55%;
+    --accent-foreground: 224 32% 9%;
+    --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --ring: 240 3.7% 15.9%;
+    --ring: 190 98% 55%;
   }
 
   html {
@@ -69,6 +95,7 @@
       hsl(var(--background));
     color: hsl(var(--foreground));
     min-height: 100vh;
+    transition: background-color 160ms ease, color 160ms ease;
   }
 
   .glass {
@@ -114,5 +141,28 @@
     .desktop-only {
       display: none;
     }
+
+    .mobile-only {
+      display: block;
+    }
+
+    .mobile-only-flex {
+      display: flex;
+    }
+
+    .mobile-only-grid {
+      display: grid;
+    }
+
+    .mobile-only-inline-flex {
+      display: inline-flex;
+    }
+  }
+
+  .mobile-only,
+  .mobile-only-flex,
+  .mobile-only-grid,
+  .mobile-only-inline-flex {
+    display: none;
   }
 }

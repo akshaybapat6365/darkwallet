@@ -64,6 +64,123 @@ export circuit registerAuthorization(
   authorizations.insert(commitment);
 }
 
+export circuit registerBatch(
+  batchSize: Uint<8>,
+  rxId0: Uint<64>,
+  pharmacyId0: Bytes<32>,
+  patientPublicKey0: Bytes<32>,
+  oracleAttestationHash0: Bytes<32>,
+  expiresAt0: Uint<64>,
+  rxId1: Uint<64>,
+  pharmacyId1: Bytes<32>,
+  patientPublicKey1: Bytes<32>,
+  oracleAttestationHash1: Bytes<32>,
+  expiresAt1: Uint<64>,
+  rxId2: Uint<64>,
+  pharmacyId2: Bytes<32>,
+  patientPublicKey2: Bytes<32>,
+  oracleAttestationHash2: Bytes<32>,
+  expiresAt2: Uint<64>,
+  rxId3: Uint<64>,
+  pharmacyId3: Bytes<32>,
+  patientPublicKey3: Bytes<32>,
+  oracleAttestationHash3: Bytes<32>,
+  expiresAt3: Uint<64>,
+  rxId4: Uint<64>,
+  pharmacyId4: Bytes<32>,
+  patientPublicKey4: Bytes<32>,
+  oracleAttestationHash4: Bytes<32>,
+  expiresAt4: Uint<64>,
+  rxId5: Uint<64>,
+  pharmacyId5: Bytes<32>,
+  patientPublicKey5: Bytes<32>,
+  oracleAttestationHash5: Bytes<32>,
+  expiresAt5: Uint<64>,
+  rxId6: Uint<64>,
+  pharmacyId6: Bytes<32>,
+  patientPublicKey6: Bytes<32>,
+  oracleAttestationHash6: Bytes<32>,
+  expiresAt6: Uint<64>,
+  rxId7: Uint<64>,
+  pharmacyId7: Bytes<32>,
+  patientPublicKey7: Bytes<32>,
+  oracleAttestationHash7: Bytes<32>,
+  expiresAt7: Uint<64>
+): [] {
+  const batchSizePublic = disclose(batchSize);
+  assert(batchSizePublic > 0 && batchSizePublic <= 8, "invalid batch size");
+  const issuerPk = disclose(issuerPublicKey(issuerSecretKey()));
+  if (issuer_pk.is_some) {
+    assert(issuer_pk.value == issuerPk, "unauthorized issuer");
+  } else {
+    issuer_pk = disclose(some<Bytes<32>>(issuerPk));
+  }
+
+  if (batchSizePublic > 0) {
+    const c0 = disclose(
+      authorizationCommitment(rxId0, pharmacyId0, patientPublicKey0, oracleAttestationHash0, expiresAt0)
+    );
+    assert(!revoked.member(c0), "authorization revoked");
+    authorizations.insert(c0);
+  }
+
+  if (batchSizePublic > 1) {
+    const c1 = disclose(
+      authorizationCommitment(rxId1, pharmacyId1, patientPublicKey1, oracleAttestationHash1, expiresAt1)
+    );
+    assert(!revoked.member(c1), "authorization revoked");
+    authorizations.insert(c1);
+  }
+
+  if (batchSizePublic > 2) {
+    const c2 = disclose(
+      authorizationCommitment(rxId2, pharmacyId2, patientPublicKey2, oracleAttestationHash2, expiresAt2)
+    );
+    assert(!revoked.member(c2), "authorization revoked");
+    authorizations.insert(c2);
+  }
+
+  if (batchSizePublic > 3) {
+    const c3 = disclose(
+      authorizationCommitment(rxId3, pharmacyId3, patientPublicKey3, oracleAttestationHash3, expiresAt3)
+    );
+    assert(!revoked.member(c3), "authorization revoked");
+    authorizations.insert(c3);
+  }
+
+  if (batchSizePublic > 4) {
+    const c4 = disclose(
+      authorizationCommitment(rxId4, pharmacyId4, patientPublicKey4, oracleAttestationHash4, expiresAt4)
+    );
+    assert(!revoked.member(c4), "authorization revoked");
+    authorizations.insert(c4);
+  }
+
+  if (batchSizePublic > 5) {
+    const c5 = disclose(
+      authorizationCommitment(rxId5, pharmacyId5, patientPublicKey5, oracleAttestationHash5, expiresAt5)
+    );
+    assert(!revoked.member(c5), "authorization revoked");
+    authorizations.insert(c5);
+  }
+
+  if (batchSizePublic > 6) {
+    const c6 = disclose(
+      authorizationCommitment(rxId6, pharmacyId6, patientPublicKey6, oracleAttestationHash6, expiresAt6)
+    );
+    assert(!revoked.member(c6), "authorization revoked");
+    authorizations.insert(c6);
+  }
+
+  if (batchSizePublic > 7) {
+    const c7 = disclose(
+      authorizationCommitment(rxId7, pharmacyId7, patientPublicKey7, oracleAttestationHash7, expiresAt7)
+    );
+    assert(!revoked.member(c7), "authorization revoked");
+    authorizations.insert(c7);
+  }
+}
+
 export circuit redeem(
   rxId: Uint<64>,
   pharmacyId: Bytes<32>,
@@ -100,6 +217,12 @@ export circuit revokeAuthorization(
   );
   assert(authorizations.member(commitment), "authorization not found");
   revoked.insert(commitment);
+}
+
+export circuit transferIssuer(newIssuerPublicKey: Bytes<32>): [] {
+  const issuerPk = disclose(issuerPublicKey(issuerSecretKey()));
+  assert(issuer_pk.is_some && issuer_pk.value == issuerPk, "unauthorized issuer");
+  issuer_pk = disclose(some<Bytes<32>>(newIssuerPublicKey));
 }
 
 export circuit issuerPublicKey(sk: Bytes<32>): Bytes<32> {

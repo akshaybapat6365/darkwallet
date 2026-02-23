@@ -22,6 +22,7 @@ import {
 } from '@midnight-ntwrk/wallet-sdk-unshielded-wallet';
 import { type MidnightProvider, type WalletProvider } from '@midnight-ntwrk/midnight-js-types';
 import { getNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
+import { logger } from '../logger.js';
 
 // Required for GraphQL subscriptions (wallet sync) to work in Node.js.
 (globalThis as any).WebSocket = WebSocket as any;
@@ -30,7 +31,7 @@ import { getNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 // long-running proof generation requests. Bump globally for this service.
 const DEFAULT_HTTP_TIMEOUT_MS = 60 * 60 * 1000;
 const httpTimeoutMs = (() => {
-  const raw = process.env.MIDLIGHT_HTTP_TIMEOUT_MS;
+  const raw = process.env.DARKWALLET_HTTP_TIMEOUT_MS ?? process.env.MIDLIGHT_HTTP_TIMEOUT_MS;
   if (!raw) return DEFAULT_HTTP_TIMEOUT_MS;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_HTTP_TIMEOUT_MS;
@@ -47,22 +48,18 @@ if (!(globalThis as any).__midlightUndiciConfigured) {
 }
 
 const debugError = (label: string, err: unknown) => {
-  if (process.env.MIDLIGHT_DEBUG_ERRORS !== '1') return;
-
-  // eslint-disable-next-line no-console
-  console.error(`\n[midlight] ${label}: ${inspect(err, { depth: 12, maxArrayLength: 50 })}`);
-
-  const cause = (err as any)?.cause;
-  if (cause) {
-    // eslint-disable-next-line no-console
-    console.error(`[midlight] ${label} (cause): ${inspect(cause, { depth: 12, maxArrayLength: 50 })}`);
-  }
-
-  const nested = (cause as any)?.cause;
-  if (nested) {
-    // eslint-disable-next-line no-console
-    console.error(`[midlight] ${label} (cause.cause): ${inspect(nested, { depth: 12, maxArrayLength: 50 })}`);
-  }
+  if ((process.env.DARKWALLET_DEBUG_ERRORS ?? process.env.MIDLIGHT_DEBUG_ERRORS) !== '1') return;
+  const cause = (err as { cause?: unknown })?.cause;
+  const nested = (cause as { cause?: unknown } | undefined)?.cause;
+  logger.error(
+    {
+      err,
+      details: inspect(err, { depth: 12, maxArrayLength: 50 }),
+      causeDetails: cause ? inspect(cause, { depth: 12, maxArrayLength: 50 }) : undefined,
+      nestedCauseDetails: nested ? inspect(nested, { depth: 12, maxArrayLength: 50 }) : undefined,
+    },
+    `[midnight] ${label}`,
+  );
 };
 
 export interface WalletContext {

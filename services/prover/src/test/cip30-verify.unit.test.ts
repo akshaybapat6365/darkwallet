@@ -40,4 +40,19 @@ describe('CIP-30 signature verification', () => {
       }),
     ).rejects.toThrow(/exceeds maximum allowed size/i);
   });
+
+  it('rejects signatures that do not correspond to the supplied wallet address', async () => {
+    const payloadHex = Buffer.from('{"hello":"darkwallet"}', 'utf8').toString('hex');
+    const fixture = await createWalletFixture(payloadHex);
+    const otherWalletAddress = `01${'ab'.repeat(56)}`;
+
+    await expect(
+      verifyCip30Signature({
+        walletAddress: otherWalletAddress,
+        signedPayloadHex: fixture.signedPayloadHex,
+        coseSign1Hex: fixture.coseSign1Hex,
+        coseKeyHex: fixture.coseKeyHex,
+      }),
+    ).rejects.toThrow(/does not correspond to signing key/i);
+  });
 });

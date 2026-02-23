@@ -7,6 +7,7 @@ import { JobTracker } from '../components/jobs/JobTracker';
 import { ErrorPanel, formatUiError, type UiError } from '../components/ui/ErrorPanel';
 import { Field, SelectField } from '../components/ui/Field';
 import { ResultDisplay } from '../components/ui/ResultDisplay';
+import { Skeleton } from '../components/ui/Skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { api, streamJobEvents, type JobSnapshot, type PatientRecord } from '../lib/api';
 import { sha256Hex } from '../lib/hash';
@@ -314,6 +315,24 @@ export const PrescriptionPage = () => {
       }
     }
   };
+
+  if (health.isLoading && patients.length === 0) {
+    return (
+      <section className="space-y-4 page-enter" aria-busy="true" aria-live="polite">
+        <Skeleton className="h-24 w-full" />
+        <Card className="glass">
+          <CardHeader>
+            <Skeleton className="h-7 w-64" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </CardContent>
+        </Card>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-4 page-enter">

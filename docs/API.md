@@ -18,6 +18,9 @@ Response fields:
 - `features.enableIntentSigning`
 - `features.enableAttestationEnforcement`
 - `features.allowLegacyJobEndpoints`
+- `probes.redis.{ok,latencyMs,error?,mode}`
+- `probes.postgres.{ok,latencyMs,error?,mode}`
+- `probes.proofServer.{ok,latencyMs,error?,mode}`
 - `contractAddress`
 - `clinicInitialized`
 - `patientCount`
@@ -66,6 +69,38 @@ Request body:
 - `attestationHash?`
 - `expiresAt?`
 
+### `POST /api/clinic/register-batch`
+Registers 1..8 authorization commitments in a single transaction.
+
+Request body:
+- `items: RegisterAuthorization[]` (min 1, max 8)
+
+Each item:
+- `rxId`
+- `pharmacyIdHex`
+- `patientId` or `patientPublicKeyHex`
+- `attestationHash?`
+- `expiresAt?`
+
+Response:
+- `count`
+- `items[]`
+- `txId`
+- `blockHeight`
+- `contractAddress`
+
+### `POST /api/clinic/transfer-issuer`
+Rotates issuer authority to a new issuer key.
+
+Request body:
+- `newIssuerSecretKeyHex?` (32-byte hex; if omitted, generated server-side)
+
+Response:
+- `issuerPublicKeyHex`
+- `txId`
+- `blockHeight`
+- `contractAddress`
+
 ## Job Queue + Events
 
 ### `POST /api/jobs/deploy`
@@ -98,7 +133,7 @@ Server-Sent Events stream:
 
 ## Pickup Index
 
-### `GET /api/pickups?limit=<n>`
+### `GET /api/pickups?limit=<n>&offset=<n>`
 Returns indexed pickups.
 
 Record fields:
@@ -203,6 +238,8 @@ Versioned paths are available for:
 - `/api/v1/jobs/*`
 - `/api/v1/pickups`
 - `/api/v1/clinic/revoke`
+- `/api/v1/clinic/register-batch`
+- `/api/v1/clinic/transfer-issuer`
 
 ## Error Envelope
 

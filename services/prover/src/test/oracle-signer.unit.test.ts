@@ -45,4 +45,21 @@ describe('oracle signer', () => {
     );
     expect(tamperedVerified).toBe(false);
   });
+
+  it('rejects invalid oracle key configurations', async () => {
+    await expect(
+      createOracleSigner({
+        domainTag: 'darkwallet:oracle:v1',
+        privateKeyHex: '01'.repeat(32),
+        publicKeyHex: 'ff'.repeat(32),
+      }),
+    ).rejects.toThrow(/does not match/i);
+
+    await expect(
+      createOracleSigner({
+        domainTag: 'darkwallet:oracle:v1',
+        publicKeyHex: '01'.repeat(32),
+      }),
+    ).rejects.toThrow(/requires both private and public key material/i);
+  });
 });

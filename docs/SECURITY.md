@@ -121,3 +121,9 @@ For preview/preprod/mainnet:
   - `npm run test:sim`
   - `npm run test:e2e`
   - `npm run build`
+
+## Dependency Audit Allowlist Governance
+
+- `scripts/audit-ci.mjs` currently contains a temporary allowlist for known high-severity transitive issues in upstream Midnight SDK dependency chains.
+- This allowlist is intentionally bounded and reviewed at each dependency update.
+- Mandatory review trigger: when migrating to Midnight SDK v5, re-run `npm audit --omit=dev --json`, remove any resolved allowlist entries, and fail builds on all remaining non-upstream high/critical items.
