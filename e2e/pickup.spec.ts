@@ -599,9 +599,15 @@ test('attestation verify fails when ownership check fails', async ({ page }) => 
   const scenario = await boot(page, { failOwnershipVerify: true }, true);
   await page.getByRole('link', { name: 'Attestation' }).click();
   await page.getByLabel('Asset Fingerprint').fill('asset1nope');
-  await page.getByRole('button', { name: 'Generate attestation challenge' }).click();
-  await page.getByRole('button', { name: 'Sign attestation challenge with wallet' }).click();
-  await page.getByRole('button', { name: 'Verify signed attestation challenge' }).click();
+  const challengeButton = page.getByRole('button', { name: 'Generate attestation challenge' });
+  const signButton = page.getByRole('button', { name: 'Sign attestation challenge with wallet' });
+  const verifyButton = page.getByRole('button', { name: 'Verify signed attestation challenge' });
+  await expect(challengeButton).toBeEnabled({ timeout: 10_000 });
+  await challengeButton.click();
+  await expect(signButton).toBeEnabled({ timeout: 10_000 });
+  await signButton.click();
+  await expect(verifyButton).toBeEnabled({ timeout: 10_000 });
+  await verifyButton.click();
 
   const errorPanel = page.getByTestId('error-panel');
   await expect(errorPanel).toBeVisible();

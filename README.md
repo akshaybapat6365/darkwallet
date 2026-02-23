@@ -83,7 +83,7 @@ Included services:
 
 ## Configuration Model
 
-DarkWallet accepts legacy `MIDLIGHT_*` env vars and modern `DARKWALLET_*` aliases (legacy keys log deprecation warnings).
+DarkWallet accepts legacy `MIDLIGHT_*` env vars and modern `DARKWALLET_*` aliases (legacy keys log deprecation warnings). The v2 target is to make `DARKWALLET_*` primary while keeping documented migration guidance.
 
 Core required values outside standalone:
 - `MIDNIGHT_NETWORK=preview|preprod|mainnet`

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Midlight demo contract: privacy-preserving prescription pickup authorization.
+// DarkWallet contract: privacy-preserving prescription pickup authorization.
 //
 // Model:
 // - Clinic registers an authorization commitment (public) for a patient + Rx + pharmacy.
@@ -8,7 +8,7 @@
 //   registered patient public key (a commitment) and by creating a nullifier to prevent
 //   double redemption.
 //
-// This is a hackable demo contract, not production logic.
+// Contract state stores commitments and nullifiers only; private witness material stays off-ledger.
 
 pragma language_version >= 0.20;
 
