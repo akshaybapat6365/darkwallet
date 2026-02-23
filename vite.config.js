@@ -9,6 +9,9 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 3000,
     strictPort: true,
+    watch: {
+      ignored: ['**/test-results/**', '**/playwright-report/**'],
+    },
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:4000',
@@ -18,5 +21,6 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    exclude: ['e2e/**', 'node_modules/**'],
   },
 });

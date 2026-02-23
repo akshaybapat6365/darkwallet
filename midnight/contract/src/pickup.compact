@@ -19,6 +19,7 @@ struct AuthorizationPreimage {
   rx_id: Uint<64>,
   pharmacy_id: Bytes<32>,
   patient_pk: Bytes<32>,
+  oracle_attestation_hash: Bytes<32>,
 }
 
 struct NullifierPreimage {
@@ -26,6 +27,7 @@ struct NullifierPreimage {
   rx_id: Uint<64>,
   pharmacy_id: Bytes<32>,
   patient_pk: Bytes<32>,
+  oracle_attestation_hash: Bytes<32>,
 }
 
 export ledger issuer_pk: Maybe<Bytes<32>>;
@@ -39,23 +41,28 @@ constructor() {
 witness issuerSecretKey(): Bytes<32>;
 witness patientSecretKey(): Bytes<32>;
 
-export circuit registerAuthorization(rxId: Uint<64>, pharmacyId: Bytes<32>, patientPublicKey: Bytes<32>): [] {
+export circuit registerAuthorization(
+  rxId: Uint<64>,
+  pharmacyId: Bytes<32>,
+  patientPublicKey: Bytes<32>,
+  oracleAttestationHash: Bytes<32>
+): [] {
   const issuerPk = disclose(issuerPublicKey(issuerSecretKey()));
   if (issuer_pk.is_some) {
     assert(issuer_pk.value == issuerPk, "unauthorized issuer");
   } else {
     issuer_pk = disclose(some<Bytes<32>>(issuerPk));
   }
-  const commitment = disclose(authorizationCommitment(rxId, pharmacyId, patientPublicKey));
+  const commitment = disclose(authorizationCommitment(rxId, pharmacyId, patientPublicKey, oracleAttestationHash));
   authorizations.insert(commitment);
 }
 
-export circuit redeem(rxId: Uint<64>, pharmacyId: Bytes<32>): [] {
+export circuit redeem(rxId: Uint<64>, pharmacyId: Bytes<32>, oracleAttestationHash: Bytes<32>): [] {
   const patientPk = patientPublicKey(patientSecretKey());
-  const commitment = disclose(authorizationCommitment(rxId, pharmacyId, patientPk));
+  const commitment = disclose(authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash));
   assert(authorizations.member(commitment), "authorization not found");
 
-  const nul = disclose(redemptionNullifier(patientPk, rxId, pharmacyId));
+  const nul = disclose(redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash));
   assert(!spent.member(nul), "already redeemed");
   spent.insert(nul);
 }
@@ -68,24 +75,36 @@ export circuit patientPublicKey(sk: Bytes<32>): Bytes<32> {
   return persistentHash<Vector<2, Bytes<32>>>([pad(32, "rx:patient:v1"), sk]);
 }
 
-export circuit authorizationCommitment(rxId: Uint<64>, pharmacyId: Bytes<32>, patientPk: Bytes<32>): Bytes<32> {
+export circuit authorizationCommitment(
+  rxId: Uint<64>,
+  pharmacyId: Bytes<32>,
+  patientPk: Bytes<32>,
+  oracleAttestationHash: Bytes<32>
+): Bytes<32> {
   return persistentHash<AuthorizationPreimage>(
     AuthorizationPreimage {
       sep: pad(16, "rx:auth:v1"),
       rx_id: rxId,
       pharmacy_id: pharmacyId,
       patient_pk: patientPk,
+      oracle_attestation_hash: oracleAttestationHash,
     }
   );
 }
 
-export circuit redemptionNullifier(patientPk: Bytes<32>, rxId: Uint<64>, pharmacyId: Bytes<32>): Bytes<32> {
+export circuit redemptionNullifier(
+  patientPk: Bytes<32>,
+  rxId: Uint<64>,
+  pharmacyId: Bytes<32>,
+  oracleAttestationHash: Bytes<32>
+): Bytes<32> {
   return persistentHash<NullifierPreimage>(
     NullifierPreimage {
       sep: pad(16, "rx:nul:v1"),
       rx_id: rxId,
       pharmacy_id: pharmacyId,
       patient_pk: patientPk,
+      oracle_attestation_hash: oracleAttestationHash,
     }
   );
 }

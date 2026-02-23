@@ -8,7 +8,8 @@ import { assertIsContractAddress } from '@midnight-ntwrk/midnight-js-utils';
 import { Contract, ledger, pureCircuits, witnesses, type PickupPrivateState } from '@midlight/pickup-contract';
 import type { MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 
-import { StateStore } from '../state/store.js';
+import type { PickupIndexStore } from '../state/pickup-index.js';
+import type { StateStore } from '../state/store.js';
 import { bytesToHex, hexToBytesN, randomBytes32, strip0x, zeroBytes } from '../utils/hex.js';
 
 export type PickupCircuits = ImpureCircuitId<Contract<PickupPrivateState>>;
@@ -35,6 +36,7 @@ const compiledPickupContract = (zkConfigPath: string) =>
   );
 
 const asBytes32 = (hex: string) => hexToBytesN(hex, 32);
+const asBytes32OrZero = (hex?: string | null) => (hex ? asBytes32(hex) : zeroBytes(32));
 
 const asBigUint64 = (v: string | number) => {
   const asStr = typeof v === 'number' ? String(v) : v;
@@ -51,12 +53,20 @@ const normalizeContractAddress = (s: string) => {
 export class PickupService {
   readonly #providers: PickupProviders;
   readonly #store: StateStore;
+  readonly #pickupIndex: PickupIndexStore;
   readonly #compiledContract;
   readonly #privateStateStoreName: string;
 
-  constructor(params: { providers: PickupProviders; store: StateStore; zkConfigPath: string; privateStateStoreName: string }) {
+  constructor(params: {
+    providers: PickupProviders;
+    store: StateStore;
+    pickupIndex: PickupIndexStore;
+    zkConfigPath: string;
+    privateStateStoreName: string;
+  }) {
     this.#providers = params.providers;
     this.#store = params.store;
+    this.#pickupIndex = params.pickupIndex;
     this.#compiledContract = compiledPickupContract(params.zkConfigPath);
     this.#privateStateStoreName = params.privateStateStoreName;
   }
@@ -71,18 +81,21 @@ export class PickupService {
     };
   }
 
-  async initClinic(): Promise<{ issuerSecretKeyHex: string; issuerPublicKeyHex: string }> {
+  async #ensureClinicSecretKey(): Promise<Uint8Array> {
     const next = await this.#store.update((prev) => {
       if (prev.clinic?.issuerSecretKeyHex) return prev;
       return { ...prev, clinic: { issuerSecretKeyHex: bytesToHex(randomBytes32()) } };
     });
-
-    const sk = asBytes32(next.clinic!.issuerSecretKeyHex);
-    const pk = pureCircuits.issuerPublicKey(sk);
-    return { issuerSecretKeyHex: bytesToHex(sk), issuerPublicKeyHex: bytesToHex(pk) };
+    return asBytes32(next.clinic!.issuerSecretKeyHex);
   }
 
-  async createPatient(): Promise<{ patientId: string; patientSecretKeyHex: string; patientPublicKeyHex: string }> {
+  async initClinic(): Promise<{ issuerPublicKeyHex: string }> {
+    const sk = await this.#ensureClinicSecretKey();
+    const pk = pureCircuits.issuerPublicKey(sk);
+    return { issuerPublicKeyHex: bytesToHex(pk) };
+  }
+
+  async createPatient(): Promise<{ patientId: string; patientPublicKeyHex: string }> {
     const patientId = crypto.randomUUID();
     const patientSk = randomBytes32();
     const patientPk = pureCircuits.patientPublicKey(patientSk);
@@ -98,7 +111,7 @@ export class PickupService {
       },
     }));
 
-    return { patientId, patientSecretKeyHex: bytesToHex(patientSk), patientPublicKeyHex: bytesToHex(patientPk) };
+    return { patientId, patientPublicKeyHex: bytesToHex(patientPk) };
   }
 
   async setContractAddress(contractAddress: string) {
@@ -191,12 +204,12 @@ export class PickupService {
     pharmacyIdHex: string;
     patientId?: string;
     patientPublicKeyHex?: string;
+    attestationHash?: string;
   }) {
     const state = await this.#store.read();
     if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
 
-    const clinic = await this.initClinic();
-    const clinicSk = asBytes32(clinic.issuerSecretKeyHex);
+    const clinicSk = await this.#ensureClinicSecretKey();
 
     const patientPk =
       params.patientPublicKeyHex != null
@@ -217,18 +230,33 @@ export class PickupService {
 
     const rxId = asBigUint64(params.rxId);
     const pharmacyId = asBytes32(params.pharmacyIdHex);
-    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk);
+    const oracleAttestationHash = asBytes32OrZero(params.attestationHash);
+    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash);
 
-    const tx = await joined.callTx.registerAuthorization(rxId, pharmacyId, patientPk);
-    return {
+    const tx = await joined.callTx.registerAuthorization(rxId, pharmacyId, patientPk, oracleAttestationHash);
+    const out = {
       commitmentHex: bytesToHex(commitment),
+      attestationHashHex: bytesToHex(oracleAttestationHash),
+      rxId: rxId.toString(10),
+      pharmacyIdHex: bytesToHex(pharmacyId),
+      patientPublicKeyHex: bytesToHex(patientPk),
       txId: tx.public.txId,
       blockHeight: tx.public.blockHeight,
       contractAddress: joined.deployTxData.public.contractAddress,
     };
+    await this.#pickupIndex.recordAuthorization({
+      contractAddress: out.contractAddress,
+      commitmentHex: out.commitmentHex,
+      rxId: out.rxId,
+      pharmacyIdHex: out.pharmacyIdHex,
+      patientPublicKeyHex: out.patientPublicKeyHex,
+      txId: out.txId,
+      blockHeight: out.blockHeight,
+    });
+    return out;
   }
 
-  async redeem(params: { patientId: string; rxId: string | number; pharmacyIdHex: string }) {
+  async redeem(params: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string }) {
     const state = await this.#store.read();
     if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
 
@@ -239,7 +267,8 @@ export class PickupService {
     const pharmacyId = asBytes32(params.pharmacyIdHex);
     const patientSk = asBytes32(p.patientSecretKeyHex);
     const patientPk = pureCircuits.patientPublicKey(patientSk);
-    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId);
+    const oracleAttestationHash = asBytes32OrZero(params.attestationHash);
+    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash);
 
     const joined = await findDeployedContract(this.#providers, {
       contractAddress: state.contractAddress,
@@ -248,17 +277,30 @@ export class PickupService {
       initialPrivateState: makePrivateState({ issuerSecretKey: zeroBytes(32), patientSecretKey: patientSk }),
     });
 
-    const tx = await joined.callTx.redeem(rxId, pharmacyId);
-    return {
+    const tx = await joined.callTx.redeem(rxId, pharmacyId, oracleAttestationHash);
+    const out = {
       patientPublicKeyHex: bytesToHex(patientPk),
       nullifierHex: bytesToHex(nullifier),
+      attestationHashHex: bytesToHex(oracleAttestationHash),
+      rxId: rxId.toString(10),
+      pharmacyIdHex: bytesToHex(pharmacyId),
       txId: tx.public.txId,
       blockHeight: tx.public.blockHeight,
       contractAddress: joined.deployTxData.public.contractAddress,
     };
+    await this.#pickupIndex.recordRedemption({
+      contractAddress: out.contractAddress,
+      nullifierHex: out.nullifierHex,
+      rxId: out.rxId,
+      pharmacyIdHex: out.pharmacyIdHex,
+      patientPublicKeyHex: out.patientPublicKeyHex,
+      txId: out.txId,
+      blockHeight: out.blockHeight,
+    });
+    return out;
   }
 
-  async check(params: { patientId: string; rxId: string | number; pharmacyIdHex: string }) {
+  async check(params: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string }) {
     const state = await this.#store.read();
     if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
 
@@ -268,8 +310,9 @@ export class PickupService {
     const rxId = asBigUint64(params.rxId);
     const pharmacyId = asBytes32(params.pharmacyIdHex);
     const patientPk = asBytes32(p.patientPublicKeyHex);
-    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk);
-    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId);
+    const oracleAttestationHash = asBytes32OrZero(params.attestationHash);
+    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash);
+    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash);
 
     const ledgerState = await this.getLedgerState();
     if (!ledgerState) return { authorizationFound: false, redeemed: false };
@@ -290,6 +333,7 @@ export class PickupService {
     return {
       commitmentHex: bytesToHex(commitment),
       nullifierHex: bytesToHex(nullifier),
+      attestationHashHex: bytesToHex(oracleAttestationHash),
       authorizationFound: has(authSet, commitment),
       redeemed: has(spentSet, nullifier),
       issuerPublicKeyHex: (ledgerState as any).issuer_pk?.is_some ? bytesToHex((ledgerState as any).issuer_pk.value) : null,

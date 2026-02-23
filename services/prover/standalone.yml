@@ -1,4 +1,33 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: 'midlight-redis'
+    ports:
+      - '6379:6379'
+    command: ['redis-server', '--save', '60', '1', '--loglevel', 'warning']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: 'midlight-postgres'
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_DB: midlight
+      POSTGRES_USER: midlight
+      POSTGRES_PASSWORD: midlight
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U midlight -d midlight']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - midlight-postgres-data:/var/lib/postgresql/data
+
   proof-server:
     container_name: 'midlight-proof-server'
     image: 'midnightntwrk/proof-server:7.0.0'
@@ -44,3 +73,6 @@ services:
     environment:
       CFG_PRESET: 'dev'
       SIDECHAIN_BLOCK_BENEFICIARY: '04bcf7ad3be7a5c790460be82a713af570f22e0f801f6659ab8e84a52be6969e'
+
+volumes:
+  midlight-postgres-data:

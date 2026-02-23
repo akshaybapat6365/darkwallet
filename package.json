@@ -18,25 +18,39 @@
     "preview": "vite preview",
     "test": "vitest --run",
     "test:watch": "vitest",
-    "lint": "eslint \"src/**/*.{js,jsx,ts,tsx}\""
+    "test:e2e": "playwright test",
+    "test:sim": "npm -w midnight/contract run build && npm -w services/prover run build && vitest --run midnight/contract/src/test services/prover/src/test",
+    "lint": "eslint \"src/**/*.{js,jsx,ts,tsx}\"",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "type": "module",
   "dependencies": {
+    "@midnight-ntwrk/dapp-connector-api": "^4.0.1",
+    "@radix-ui/react-progress": "^1.1.7",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@tanstack/react-query": "^5.87.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.23.22",
+    "lucide-react": "^0.545.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tailwind-merge": "^3.3.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@midnight-ntwrk/ledger-v7": "7.0.0",
+    "@playwright/test": "^1.55.1",
     "@tailwindcss/postcss": "^4.1.8",
     "@testing-library/react": "^14.3.0",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.5.1",
+    "@vitest/coverage-v8": "^3.2.4",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
     "eslint": "^8.57.1",
@@ -45,6 +59,7 @@
     "postcss": "^8.5.4",
     "prettier": "^3.5.3",
     "tailwindcss": "^4.1.8",
+    "typescript": "^5.9.3",
     "vite": "^6.4.1",
     "vitest": "^3.2.4"
   }

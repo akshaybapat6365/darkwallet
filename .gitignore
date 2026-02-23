@@ -1,5 +1,7 @@
 node_modules
 /dist
+/midnight/contract/dist/
+/services/prover/dist/
 
 # Vite build output
 .vite
@@ -7,3 +9,8 @@ node_modules
 # Prover service state
 /services/prover/.data/
 /services/prover/midlight-private-state*/
+
+# Playwright artifacts
+/playwright-report/
+/test-results/
+/coverage/
