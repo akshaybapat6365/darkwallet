@@ -9,7 +9,7 @@ const hashHex = (value: string): string => crypto.createHash('sha256').update(va
 
 export type IntentTypedPayload = {
   domain: {
-    name: 'Midlight';
+    name: 'DarkWallet';
     version: '1';
     chainId: string;
     verifyingService: string;
@@ -26,6 +26,7 @@ export type IntentTypedPayload = {
     pharmacyIdHex: string;
     patientPublicKeyHex: string;
     attestationHash: string | null;
+    authorizationExpiresAt: string | null;
     nonce: string;
     issuedAt: string;
     expiresAt: string;
@@ -34,7 +35,7 @@ export type IntentTypedPayload = {
 
 export type AttestationTypedPayload = {
   domain: {
-    name: 'Midlight';
+    name: 'DarkWallet';
     version: '1';
     chainId: string;
     verifyingService: string;
@@ -72,15 +73,16 @@ export const buildIntentTypedPayload = (params: {
   pharmacyIdHex: string;
   patientPublicKeyHex: string;
   attestationHash: string | null;
+  authorizationExpiresAt: string | null;
   nonce: string;
   issuedAt: string;
   expiresAt: string;
 }): IntentTypedPayload => ({
   domain: {
-    name: 'Midlight',
+    name: 'DarkWallet',
     version: '1',
     chainId: params.chainId,
-    verifyingService: 'midlight-prover',
+    verifyingService: 'darkwallet-prover',
   },
   types: {
     Intent: [
@@ -91,6 +93,7 @@ export const buildIntentTypedPayload = (params: {
       { name: 'pharmacyIdHex', type: 'string' },
       { name: 'patientPublicKeyHex', type: 'string' },
       { name: 'attestationHash', type: 'string' },
+      { name: 'authorizationExpiresAt', type: 'string' },
       { name: 'nonce', type: 'string' },
       { name: 'issuedAt', type: 'string' },
       { name: 'expiresAt', type: 'string' },
@@ -105,6 +108,7 @@ export const buildIntentTypedPayload = (params: {
     pharmacyIdHex: params.pharmacyIdHex,
     patientPublicKeyHex: params.patientPublicKeyHex,
     attestationHash: params.attestationHash,
+    authorizationExpiresAt: params.authorizationExpiresAt,
     nonce: params.nonce,
     issuedAt: params.issuedAt,
     expiresAt: params.expiresAt,
@@ -122,10 +126,10 @@ export const buildAttestationTypedPayload = (params: {
   expiresAt: string;
 }): AttestationTypedPayload => ({
   domain: {
-    name: 'Midlight',
+    name: 'DarkWallet',
     version: '1',
     chainId: params.chainId,
-    verifyingService: 'midlight-prover',
+    verifyingService: 'darkwallet-prover',
   },
   types: {
     AssetAttestation: [

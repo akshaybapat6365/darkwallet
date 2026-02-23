@@ -1,5 +1,5 @@
 {
-  "name": "@midlight/pickup-contract",
+  "name": "@darkwallet/pickup-contract",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -19,7 +19,7 @@ import { createIntentStore } from './state/intent-store.js';
 import { createPickupIndexStore } from './state/pickup-index.js';
 import { createRelayerGasStore } from './state/relayer-gas-store.js';
 import { createStateStore } from './state/store.js';
-import type { PickupPrivateState } from '@midlight/pickup-contract';
+import type { PickupPrivateState } from '@darkwallet/pickup-contract';
 
 const currentDir = path.resolve(new URL(import.meta.url).pathname, '..');
 const repoRoot = path.resolve(currentDir, '..', '..', '..');
@@ -41,17 +41,17 @@ if (!walletSeed) {
   throw new Error('MIDNIGHT_WALLET_SEED is required for non-standalone networks');
 }
 if (config.network !== 'standalone' && !config.oraclePrivateKeyHex) {
-  throw new Error('MIDLIGHT_ORACLE_PRIVATE_KEY is required for preview/preprod/mainnet networks');
+  throw new Error('MIDLIGHT_ORACLE_PRIVATE_KEY or DARKWALLET_ORACLE_PRIVATE_KEY is required for preview/preprod/mainnet networks');
 }
 if (!config.oraclePrivateKeyHex) {
   // eslint-disable-next-line no-console
   console.warn('WARNING: Using insecure deterministic oracle key. For development only.');
 }
 if (config.network !== 'standalone' && !config.apiSecret) {
-  throw new Error('MIDLIGHT_API_SECRET is required for non-standalone networks');
+  throw new Error('MIDLIGHT_API_SECRET or DARKWALLET_API_SECRET is required for non-standalone networks');
 }
 if (config.network !== 'standalone' && !config.encryptionKeyHex) {
-  throw new Error('MIDLIGHT_ENCRYPTION_KEY is required for non-standalone networks');
+  throw new Error('MIDLIGHT_ENCRYPTION_KEY or DARKWALLET_ENCRYPTION_KEY is required for non-standalone networks');
 }
 
 const ctx = await buildWalletFromSeed(walletConfig, walletSeed);
@@ -61,7 +61,7 @@ await waitForFunds(ctx.wallet);
 const walletAndMidnightProvider = await createWalletAndMidnightProvider(ctx);
 const providers: PickupProviders = configureProviders<PickupCircuits, string, PickupPrivateState>({
   zkConfigPath: config.zkConfigPath,
-  privateStateStoreName: 'midlight-private-state',
+  privateStateStoreName: 'darkwallet-private-state',
   indexerHttpUrl: config.indexerHttpUrl,
   indexerWsUrl: config.indexerWsUrl,
   proofServerHttpUrl: config.proofServerHttpUrl,
@@ -83,7 +83,7 @@ const pickup = new PickupService({
   store,
   pickupIndex,
   zkConfigPath: config.zkConfigPath,
-  privateStateStoreName: 'midlight-private-state',
+  privateStateStoreName: 'darkwallet-private-state',
 });
 
 const jobs = new ProverJobQueue({
@@ -100,7 +100,11 @@ try {
     jobs.start(),
     new Promise<never>((_, reject) => {
       redisStartupTimer = setTimeout(() => {
-        reject(new Error(`Redis startup timeout after ${redisStartupTimeoutMs}ms. Check MIDLIGHT_REDIS_URL and Redis health.`));
+        reject(
+          new Error(
+            `Redis startup timeout after ${redisStartupTimeoutMs}ms. Check MIDLIGHT_REDIS_URL / DARKWALLET_REDIS_URL and Redis health.`,
+          ),
+        );
       }, redisStartupTimeoutMs);
     }),
   ]);
@@ -119,7 +123,7 @@ if (!blockfrost) {
   // eslint-disable-next-line no-console
   console.warn('WARNING: BLOCKFROST_PROJECT_ID is not configured. Attestation ownership verification is disabled.');
 }
-const oracleFallbackSk = crypto.createHash('sha256').update(`midlight:${config.network}:oracle:dev`).digest('hex');
+const oracleFallbackSk = crypto.createHash('sha256').update(`darkwallet:${config.network}:oracle:dev`).digest('hex');
 const oracleSigner = await createOracleSigner({
   domainTag: config.oracleDomainTag,
   privateKeyHex: config.oraclePrivateKeyHex ?? oracleFallbackSk,

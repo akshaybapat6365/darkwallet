@@ -25,6 +25,7 @@ type RegisterInput = {
   patientPublicKeyHex?: string;
   intentId?: string;
   attestationHash?: string;
+  expiresAt?: string | number;
   gasSlotId?: string;
 };
 
@@ -34,6 +35,7 @@ type RedeemInput = {
   pharmacyIdHex: string;
   intentId?: string;
   attestationHash?: string;
+  expiresAt?: string | number;
   gasSlotId?: string;
 };
 

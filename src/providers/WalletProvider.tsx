@@ -1,5 +1,6 @@
 import React from 'react';
 import '@midnight-ntwrk/dapp-connector-api';
+import { toast } from 'sonner';
 
 import { useAppStore } from '../store/useAppStore';
 
@@ -47,7 +48,7 @@ declare global {
   }
 }
 
-const walletStorageKey = 'midlight.wallet.id';
+const walletStorageKey = 'darkwallet.wallet.id';
 
 const formatWalletLabel = (id: string): string => {
   if (id.toLowerCase() === 'nami') return 'Nami';
@@ -168,7 +169,9 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
         balance,
         error: null,
       });
+      toast.success(`Connected ${selected.label}`);
     } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Wallet connection failed');
       setWalletError(err instanceof Error ? err.message : String(err));
     }
   }, [setWalletError, setWalletState]);
@@ -178,6 +181,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
     setConnectedWalletId(null);
     localStorage.removeItem(walletStorageKey);
     clearWallet();
+    toast.message('Wallet disconnected');
   }, [clearWallet]);
 
   React.useEffect(() => {

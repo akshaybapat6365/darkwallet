@@ -20,6 +20,7 @@ struct AuthorizationPreimage {
   pharmacy_id: Bytes<32>,
   patient_pk: Bytes<32>,
   oracle_attestation_hash: Bytes<32>,
+  expires_at: Uint<64>,
 }
 
 struct NullifierPreimage {
@@ -28,11 +29,13 @@ struct NullifierPreimage {
   pharmacy_id: Bytes<32>,
   patient_pk: Bytes<32>,
   oracle_attestation_hash: Bytes<32>,
+  expires_at: Uint<64>,
 }
 
 export ledger issuer_pk: Maybe<Bytes<32>>;
 export ledger authorizations: Set<Bytes<32>>;
 export ledger spent: Set<Bytes<32>>;
+export ledger revoked: Set<Bytes<32>>;
 
 constructor() {
   issuer_pk = none<Bytes<32>>();
@@ -45,7 +48,8 @@ export circuit registerAuthorization(
   rxId: Uint<64>,
   pharmacyId: Bytes<32>,
   patientPublicKey: Bytes<32>,
-  oracleAttestationHash: Bytes<32>
+  oracleAttestationHash: Bytes<32>,
+  expiresAt: Uint<64>
 ): [] {
   const issuerPk = disclose(issuerPublicKey(issuerSecretKey()));
   if (issuer_pk.is_some) {
@@ -53,18 +57,49 @@ export circuit registerAuthorization(
   } else {
     issuer_pk = disclose(some<Bytes<32>>(issuerPk));
   }
-  const commitment = disclose(authorizationCommitment(rxId, pharmacyId, patientPublicKey, oracleAttestationHash));
+  const commitment = disclose(
+    authorizationCommitment(rxId, pharmacyId, patientPublicKey, oracleAttestationHash, expiresAt)
+  );
+  assert(!revoked.member(commitment), "authorization revoked");
   authorizations.insert(commitment);
 }
 
-export circuit redeem(rxId: Uint<64>, pharmacyId: Bytes<32>, oracleAttestationHash: Bytes<32>): [] {
+export circuit redeem(
+  rxId: Uint<64>,
+  pharmacyId: Bytes<32>,
+  oracleAttestationHash: Bytes<32>,
+  expiresAt: Uint<64>
+): [] {
   const patientPk = patientPublicKey(patientSecretKey());
-  const commitment = disclose(authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash));
+  const expiresAtPublic = disclose(expiresAt);
+  const commitment = disclose(
+    authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAtPublic)
+  );
   assert(authorizations.member(commitment), "authorization not found");
+  assert(!revoked.member(commitment), "authorization revoked");
+  if (expiresAtPublic > 0) {
+    assert(blockTimeLte(expiresAtPublic), "authorization expired");
+  }
 
-  const nul = disclose(redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash));
+  const nul = disclose(redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash, expiresAtPublic));
   assert(!spent.member(nul), "already redeemed");
   spent.insert(nul);
+}
+
+export circuit revokeAuthorization(
+  rxId: Uint<64>,
+  pharmacyId: Bytes<32>,
+  patientPublicKey: Bytes<32>,
+  oracleAttestationHash: Bytes<32>,
+  expiresAt: Uint<64>
+): [] {
+  const issuerPk = disclose(issuerPublicKey(issuerSecretKey()));
+  assert(issuer_pk.is_some && issuer_pk.value == issuerPk, "unauthorized issuer");
+  const commitment = disclose(
+    authorizationCommitment(rxId, pharmacyId, patientPublicKey, oracleAttestationHash, expiresAt)
+  );
+  assert(authorizations.member(commitment), "authorization not found");
+  revoked.insert(commitment);
 }
 
 export circuit issuerPublicKey(sk: Bytes<32>): Bytes<32> {
@@ -79,7 +114,8 @@ export circuit authorizationCommitment(
   rxId: Uint<64>,
   pharmacyId: Bytes<32>,
   patientPk: Bytes<32>,
-  oracleAttestationHash: Bytes<32>
+  oracleAttestationHash: Bytes<32>,
+  expiresAt: Uint<64>
 ): Bytes<32> {
   return persistentHash<AuthorizationPreimage>(
     AuthorizationPreimage {
@@ -88,6 +124,7 @@ export circuit authorizationCommitment(
       pharmacy_id: pharmacyId,
       patient_pk: patientPk,
       oracle_attestation_hash: oracleAttestationHash,
+      expires_at: expiresAt,
     }
   );
 }
@@ -96,7 +133,8 @@ export circuit redemptionNullifier(
   patientPk: Bytes<32>,
   rxId: Uint<64>,
   pharmacyId: Bytes<32>,
-  oracleAttestationHash: Bytes<32>
+  oracleAttestationHash: Bytes<32>,
+  expiresAt: Uint<64>
 ): Bytes<32> {
   return persistentHash<NullifierPreimage>(
     NullifierPreimage {
@@ -105,6 +143,7 @@ export circuit redemptionNullifier(
       pharmacy_id: pharmacyId,
       patient_pk: patientPk,
       oracle_attestation_hash: oracleAttestationHash,
+      expires_at: expiresAt,
     }
   );
 }

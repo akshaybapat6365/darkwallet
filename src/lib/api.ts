@@ -48,7 +48,11 @@ export type HealthResponse = {
 export type PickupIndexRecord = {
   contractAddress: string;
   commitmentHex: string;
+  expiresAt: string;
   nullifierHex: string | null;
+  revokedAt: string | null;
+  revokedTxId: string | null;
+  revokedBlockHeight: number | null;
   rxId: string;
   pharmacyIdHex: string;
   patientPublicKeyHex: string;
@@ -76,11 +80,14 @@ export class ApiError extends Error {
 }
 
 const getApiToken = (): string | null => {
-  const fromStorage = localStorage.getItem('midlight.apiToken');
+  const fromStorage = localStorage.getItem('darkwallet.apiToken');
   if (fromStorage && fromStorage.trim().length > 0) return fromStorage.trim();
 
-  const fromEnv = import.meta.env.VITE_MIDLIGHT_API_SECRET;
-  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv.trim();
+  const fromDarkwalletEnv = import.meta.env.VITE_DARKWALLET_API_SECRET;
+  if (typeof fromDarkwalletEnv === 'string' && fromDarkwalletEnv.trim().length > 0) return fromDarkwalletEnv.trim();
+
+  const fromLegacyEnv = import.meta.env.VITE_MIDLIGHT_API_SECRET;
+  if (typeof fromLegacyEnv === 'string' && fromLegacyEnv.trim().length > 0) return fromLegacyEnv.trim();
   return null;
 };
 
@@ -199,24 +206,26 @@ export type IntentAction = 'registerAuthorization' | 'redeem';
 
 export type IntentPrepareRequest =
   | {
-      action: 'registerAuthorization';
-      body: {
-        rxId: string | number;
-        pharmacyIdHex: string;
-        patientId?: string;
-        patientPublicKeyHex?: string;
-        attestationHash?: string;
-      };
-    }
-  | {
-      action: 'redeem';
-      body: {
-        patientId: string;
-        rxId: string | number;
-        pharmacyIdHex: string;
-        attestationHash?: string;
-      };
+    action: 'registerAuthorization';
+    body: {
+      rxId: string | number;
+      pharmacyIdHex: string;
+      patientId?: string;
+      patientPublicKeyHex?: string;
+      attestationHash?: string;
+      expiresAt?: string | number;
     };
+  }
+  | {
+    action: 'redeem';
+    body: {
+      patientId: string;
+      rxId: string | number;
+      pharmacyIdHex: string;
+      attestationHash?: string;
+      expiresAt?: string | number;
+    };
+  };
 
 export type IntentPrepareResponse = {
   intentId: string;
@@ -257,16 +266,29 @@ export const api = {
     pharmacyIdHex: string;
     patientId?: string;
     patientPublicKeyHex?: string;
+    attestationHash?: string;
+    expiresAt?: string | number;
   }) => request<{ jobId: string }>('/api/jobs/register', { method: 'POST', body }),
-  redeemJob: (body: { patientId: string; rxId: string | number; pharmacyIdHex: string }) =>
+  redeemJob: (body: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string; expiresAt?: string | number }) =>
     request<{ jobId: string }>('/api/jobs/redeem', { method: 'POST', body }),
-  pharmacyCheck: (body: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string }) =>
+  clinicRevoke: (body: {
+    rxId: string | number;
+    pharmacyIdHex: string;
+    patientId?: string;
+    patientPublicKeyHex?: string;
+    attestationHash?: string;
+    expiresAt?: string | number;
+  }) => request('/api/v1/clinic/revoke', { method: 'POST', body }),
+  pharmacyCheck: (body: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string; expiresAt?: string | number }) =>
     request<{
       commitmentHex: string;
       nullifierHex: string;
       attestationHashHex?: string;
+      expiresAt?: string;
       authorizationFound: boolean;
+      revoked: boolean;
       redeemed: boolean;
+      expiredByClientClock?: boolean;
       issuerPublicKeyHex: string | null;
     }>('/api/pharmacy/check', { method: 'POST', body }),
   job: (jobId: string) => request<{ job: JobSnapshot | null }>(`/api/jobs/${jobId}`),

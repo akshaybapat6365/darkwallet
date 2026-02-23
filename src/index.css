@@ -4,25 +4,30 @@
 
 @layer base {
   :root {
-    --background: 48 33% 96%;
-    --foreground: 222 22% 12%;
-    --muted: 48 20% 92%;
-    --muted-foreground: 220 10% 38%;
+    --background: 224 32% 9%;
+    --foreground: 210 40% 96%;
+    --muted: 224 22% 14%;
+    --muted-foreground: 214 16% 72%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --border: 48 18% 86%;
-    --input: 48 18% 86%;
-    --primary: 156 52% 24%;
-    --primary-foreground: 48 33% 96%;
-    --secondary: 48 20% 92%;
-    --secondary-foreground: 222 22% 12%;
-    --accent: 31 86% 56%;
-    --accent-foreground: 222 22% 12%;
+    --card: 224 27% 12%;
+    --card-foreground: 210 40% 96%;
+    --border: 224 24% 20%;
+    --input: 224 24% 20%;
+    --primary: 190 98% 55%;
+    --primary-foreground: 224 32% 9%;
+    --secondary: 228 20% 20%;
+    --secondary-foreground: 210 40% 96%;
+    --accent: 190 98% 55%;
+    --accent-foreground: 224 32% 9%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --ring: 156 52% 24%;
+    --ring: 190 98% 55%;
+    --success: 142 76% 36%;
+    --warning: 38 92% 50%;
+    --gradient-start: 216 90% 56%;
+    --gradient-end: 278 78% 61%;
+    --gradient: linear-gradient(135deg, hsl(var(--gradient-start)), hsl(var(--gradient-end)));
     --radius: 0.5rem;
   }
   .dark {
@@ -59,8 +64,55 @@
 
   body {
     background:
-      radial-gradient(1200px 600px at 20% 0%, hsl(31 86% 56% / 0.12), transparent 60%),
-      radial-gradient(1000px 520px at 90% 10%, hsl(156 52% 24% / 0.10), transparent 55%),
+      radial-gradient(900px 550px at 15% 0%, hsl(var(--gradient-start) / 0.22), transparent 60%),
+      radial-gradient(1000px 620px at 95% 5%, hsl(var(--gradient-end) / 0.22), transparent 60%),
       hsl(var(--background));
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+  }
+
+  .glass {
+    backdrop-filter: blur(12px) saturate(1.8);
+    background: hsl(var(--card) / 0.65);
+    border: 1px solid hsl(var(--border) / 0.4);
+  }
+
+  .badge-success {
+    background: hsl(var(--success) / 0.15);
+    color: hsl(var(--success));
+    border-radius: 9999px;
+  }
+
+  .badge-warning {
+    background: hsl(var(--warning) / 0.15);
+    color: hsl(var(--warning));
+    border-radius: 9999px;
+  }
+
+  .badge-error {
+    background: hsl(var(--destructive) / 0.15);
+    color: hsl(var(--destructive));
+    border-radius: 9999px;
+  }
+
+  .page-enter {
+    animation: fadeSlideIn 0.25s ease-out;
+  }
+
+  @keyframes fadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 640px) {
+    .desktop-only {
+      display: none;
+    }
   }
 }

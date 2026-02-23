@@ -97,6 +97,6 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           push: false
-          tags: midlight:latest
+          tags: darkwallet:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

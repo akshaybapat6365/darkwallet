@@ -1,9 +1,12 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
 
 type ScenarioOptions = {
   failOwnershipVerify?: boolean;
   tamperIntentSubmit?: boolean;
   replayOnSecondSubmit?: boolean;
+  requireAuthToken?: boolean;
+  expireAttestationOnPrepare?: boolean;
+  slowJobPolls?: number;
 };
 
 type ScenarioState = {
@@ -14,6 +17,7 @@ type ScenarioState = {
   intentCounter: number;
   intentPrepareCounter: number;
   intentSubmitCounter: number;
+  authFailures: number;
   challenges: Map<
     string,
     {
@@ -40,7 +44,27 @@ type ScenarioState = {
       result: Record<string, unknown>;
     }
   >;
+  pickups: Array<{
+    contractAddress: string;
+    commitmentHex: string;
+    expiresAt: string;
+    nullifierHex: string | null;
+    revokedAt: string | null;
+    revokedTxId: string | null;
+    revokedBlockHeight: number | null;
+    rxId: string;
+    pharmacyIdHex: string;
+    patientPublicKeyHex: string;
+    registeredTxId: string;
+    registeredBlockHeight: number;
+    redeemedTxId: string | null;
+    redeemedBlockHeight: number | null;
+    updatedAt: string;
+  }>;
 };
+
+const TEST_API_TOKEN = 'test-api-token';
+const pendingJobStorageKey = 'darkwallet.pendingJobId';
 
 const hex32 = (seed: string) => seed.padEnd(64, seed).slice(0, 64);
 
@@ -68,35 +92,54 @@ const jsonError = async (route: Route, state: ScenarioState, statusCode: number,
   });
 };
 
+const hasValidAuth = (request: Request) => {
+  const auth = request.headerValue('authorization');
+  if (auth === `Bearer ${TEST_API_TOKEN}`) return true;
+  const url = new URL(request.url());
+  return url.searchParams.get('token') === TEST_API_TOKEN;
+};
+
 const installMockWallet = async (page: Page) => {
   await page.addInitScript(() => {
-    (window as any).__mockWallet = {
+    const walletState = {
       rejectNextSign: false,
+      connected: false,
     };
+    (window as Window & { __mockWallet?: typeof walletState }).__mockWallet = walletState;
+
     const walletAddressHex = '01'.repeat(57);
-    (window as any).cardano = {
+    (window as Window & { cardano?: Record<string, unknown> }).cardano = {
       lace: {
-        enable: async () => ({
-          getNetworkId: async () => 0,
-          getBalance: async () => '1000000',
-          getUsedAddresses: async () => [walletAddressHex],
-          getChangeAddress: async () => walletAddressHex,
-          signData: async (_address: string, _payloadHex: string) => {
-            const wallet = (window as any).__mockWallet;
-            if (wallet.rejectNextSign) {
-              wallet.rejectNextSign = false;
-              throw new Error('User rejected signature request');
-            }
-            return {
-              // Intentionally fake COSE values for deterministic UI-driven tests.
-              signature: '84a30127045820abcdef',
-              key: 'a4010103272006215820abcdef',
-            };
-          },
-        }),
+        isEnabled: async () => walletState.connected || localStorage.getItem('darkwallet.wallet.id') === 'lace',
+        enable: async () => {
+          walletState.connected = true;
+          return {
+            getNetworkId: async () => 0,
+            getBalance: async () => '1000000',
+            getUsedAddresses: async () => [walletAddressHex],
+            getChangeAddress: async () => walletAddressHex,
+            signData: async (_address: string, _payloadHex: string) => {
+              if (walletState.rejectNextSign) {
+                walletState.rejectNextSign = false;
+                throw new Error('User rejected signature request');
+              }
+              return {
+                // Intentionally fake COSE values for deterministic UI-driven tests.
+                signature: '84a30127045820abcdef',
+                key: 'a4010103272006215820abcdef',
+              };
+            },
+          };
+        },
       },
     };
   });
+};
+
+const setApiToken = async (page: Page, token = TEST_API_TOKEN) => {
+  await page.addInitScript((inputToken) => {
+    localStorage.setItem('darkwallet.apiToken', inputToken);
+  }, token);
 };
 
 const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
@@ -108,9 +151,29 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
     intentCounter: 0,
     intentPrepareCounter: 0,
     intentSubmitCounter: 0,
+    authFailures: 0,
     challenges: new Map(),
     intents: new Map(),
     jobs: new Map(),
+    pickups: [
+      {
+        contractAddress: '0xdarkwallet-test-contract',
+        commitmentHex: hex32('11'),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+        nullifierHex: null,
+        revokedAt: null,
+        revokedTxId: null,
+        revokedBlockHeight: null,
+        rxId: '100',
+        pharmacyIdHex: hex32('22'),
+        patientPublicKeyHex: hex32('33'),
+        registeredTxId: 'tx-register-seed',
+        registeredBlockHeight: 990,
+        redeemedTxId: null,
+        redeemedBlockHeight: null,
+        updatedAt: nowIso(),
+      },
+    ],
   };
 
   await page.route('**/api/**', async (route) => {
@@ -121,25 +184,32 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
     const rawBody = request.postData();
     const body = rawBody ? (JSON.parse(rawBody) as Record<string, unknown>) : {};
 
+    if (options.requireAuthToken && pathname !== '/api/health' && !hasValidAuth(request)) {
+      state.authFailures += 1;
+      await jsonError(route, state, 401, 'Unauthorized', 'missing or invalid bearer token');
+      return;
+    }
+
     if (method === 'GET' && pathname === '/api/health') {
       await jsonOk(route, {
         ok: true,
         network: 'preview',
+        processRole: 'all',
         features: {
           enableIntentSigning: true,
           enableAttestationEnforcement: true,
           allowLegacyJobEndpoints: false,
         },
-        contractAddress: '0xmidlight-test-contract',
+        contractAddress: '0xdarkwallet-test-contract',
         clinicInitialized: true,
         patientCount: state.patientCounter,
-        privateStateStoreName: 'midlight-private-state',
+        privateStateStoreName: 'darkwallet-private-state',
       });
       return;
     }
 
-    if (method === 'GET' && pathname === '/api/pickups') {
-      await jsonOk(route, { pickups: [] });
+    if (method === 'GET' && (pathname === '/api/pickups' || pathname === '/api/v1/pickups')) {
+      await jsonOk(route, { pickups: state.pickups });
       return;
     }
 
@@ -176,7 +246,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
         nonce: `nonce-${state.challengeCounter}`,
         message: `challenge-${state.challengeCounter}`,
         typedPayload: {
-          domain: { name: 'Midlight', version: '1' },
+          domain: { name: 'DarkWallet', version: '1' },
           message: { challengeId, assetFingerprint },
         },
         payloadHex,
@@ -222,7 +292,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
         keyHashHex: 'aa'.repeat(28),
         oracleEnvelope: {
           algorithm: 'ed25519',
-          domainTag: 'midlight:oracle:v1',
+          domainTag: 'darkwallet:oracle:v1',
           payload: {
             cardanoAddress: String(body.walletAddress ?? ''),
             assetFingerprint: String(body.assetFingerprint ?? ''),
@@ -265,10 +335,15 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
         return;
       }
       const requestBody = (body.body ?? {}) as Record<string, unknown>;
+      if (options.expireAttestationOnPrepare) {
+        await jsonError(route, state, 409, 'Attestation expired. Re-run attestation flow.');
+        return;
+      }
       if (!requestBody.attestationHash) {
         await jsonError(route, state, 400, 'Attestation is required by policy');
         return;
       }
+
       state.intentCounter += 1;
       const intentId = `00000000-0000-4000-a000-${String(state.intentCounter).padStart(12, '0')}`;
       const payloadHex = `dead${String(state.intentCounter).padStart(4, '0')}beef`;
@@ -285,7 +360,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
         issuedAt: nowIso(),
         expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
         typedPayload: {
-          domain: { name: 'Midlight', version: '1', chainId: 'preview' },
+          domain: { name: 'DarkWallet', version: '1', chainId: 'preview' },
           message: { intentId, action },
         },
         message: `intent-${state.intentCounter}`,
@@ -328,7 +403,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
                 patientPublicKeyHex: String(intent.requestBody.patientPublicKeyHex ?? hex32('ef')),
                 txId: `tx-register-${state.intentSubmitCounter}`,
                 blockHeight: 1234 + state.intentSubmitCounter,
-                contractAddress: '0xmidlight-test-contract',
+                contractAddress: '0xdarkwallet-test-contract',
               }
             : {
                 patientPublicKeyHex: hex32('ef'),
@@ -337,7 +412,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
                 pharmacyIdHex: String(intent.requestBody.pharmacyIdHex ?? hex32('01')),
                 txId: `tx-redeem-${state.intentSubmitCounter}`,
                 blockHeight: 2234 + state.intentSubmitCounter,
-                contractAddress: '0xmidlight-test-contract',
+                contractAddress: '0xdarkwallet-test-contract',
               };
         state.jobs.set(jobId, {
           type: intent.action,
@@ -356,7 +431,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
       return;
     }
 
-    const sseMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
+    const sseMatch = pathname.match(/^\/api\/(?:v1\/)?jobs\/([^/]+)\/events$/);
     if (method === 'GET' && sseMatch) {
       const jobId = decodeURIComponent(sseMatch[1]);
       const evt = {
@@ -378,7 +453,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
       return;
     }
 
-    const jobMatch = pathname.match(/^\/api\/jobs\/([^/]+)$/);
+    const jobMatch = pathname.match(/^\/api\/(?:v1\/)?jobs\/([^/]+)$/);
     if (method === 'GET' && jobMatch) {
       const jobId = decodeURIComponent(jobMatch[1]);
       const job = state.jobs.get(jobId);
@@ -387,8 +462,28 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
         return;
       }
       job.polls += 1;
-      const running = job.polls < 2;
+      const minPolls = options.slowJobPolls ?? 2;
+      const running = job.polls < minPolls;
       const stage = running ? 'PROOF_COMPUTING' : 'CONFIRMED';
+      if (!running && job.type === 'registerAuthorization') {
+        state.pickups.unshift({
+          contractAddress: '0xdarkwallet-test-contract',
+          commitmentHex: String(job.result.commitmentHex ?? hex32('cd')),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+          nullifierHex: null,
+          revokedAt: null,
+          revokedTxId: null,
+          revokedBlockHeight: null,
+          rxId: String(job.result.rxId ?? '1'),
+          pharmacyIdHex: String(job.result.pharmacyIdHex ?? hex32('01')),
+          patientPublicKeyHex: String(job.result.patientPublicKeyHex ?? hex32('ef')),
+          registeredTxId: String(job.result.txId ?? 'tx-register'),
+          registeredBlockHeight: Number(job.result.blockHeight ?? 1234),
+          redeemedTxId: null,
+          redeemedBlockHeight: null,
+          updatedAt: nowIso(),
+        });
+      }
       await jsonOk(route, {
         job: {
           id: jobId,
@@ -410,6 +505,7 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
         commitmentHex: hex32('cd'),
         nullifierHex: hex32('99'),
         authorizationFound: true,
+        revoked: false,
         redeemed: false,
         issuerPublicKeyHex: hex32('12'),
       });
@@ -422,50 +518,63 @@ const attachApiScenario = async (page: Page, options: ScenarioOptions = {}) => {
   return state;
 };
 
-const boot = async (page: Page, options: ScenarioOptions = {}) => {
+const boot = async (page: Page, options: ScenarioOptions = {}, withApiToken = false, createPatient = true) => {
   await installMockWallet(page);
+  if (withApiToken) await setApiToken(page, TEST_API_TOKEN);
   const scenario = await attachApiScenario(page, options);
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Shielded Prescription Pickup' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'DarkWallet' })).toBeVisible();
   await page.getByRole('button', { name: 'Connect Lace' }).click();
   await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
-  await expect(page.getByText(/Address:/)).toBeVisible();
-  await page.getByRole('button', { name: 'New Patient' }).click();
-  await expect.poll(() => scenario.patientCounter).toBeGreaterThan(0);
+  await page.getByRole('link', { name: 'Prescriptions' }).click();
+  await expect(page.getByRole('heading', { name: 'Prescription Workflow' })).toBeVisible();
+  if (createPatient) {
+    await page.getByRole('button', { name: 'New Patient' }).click();
+    await expect.poll(() => scenario.patientCounter).toBeGreaterThan(0);
+  }
   return scenario;
 };
 
-const completeAttestation = async (page: Page, asset = 'asset1midlightdemo') => {
+const completeAttestation = async (page: Page, asset = 'asset1darkwalletdemo') => {
+  await page.getByRole('link', { name: 'Attestation' }).click();
+  await expect(page.getByRole('heading', { name: 'Asset Attestation Wizard' })).toBeVisible();
   await page.getByLabel('Asset Fingerprint').fill(asset);
   await page.getByRole('button', { name: 'Generate attestation challenge' }).click();
   await page.getByRole('button', { name: 'Sign attestation challenge with wallet' }).click();
-  await page.getByRole('button', { name: 'Verify signed attestation challenge' }).click();
+  const verifyButton = page.getByRole('button', { name: 'Verify signed attestation challenge' });
+  await expect(verifyButton).toBeEnabled({ timeout: 10_000 });
+  await verifyButton.click();
+  await expect(page.getByText('Attestation: verified')).toBeVisible();
+  await page.getByRole('link', { name: 'Prescriptions' }).click();
+  await expect(page.getByRole('heading', { name: 'Prescription Workflow' })).toBeVisible();
 };
 
 test('happy path: attestation + signed intent register + redeem', async ({ page }) => {
-  const scenario = await boot(page);
+  const scenario = await boot(page, {}, true);
   await completeAttestation(page, 'asset1happy');
   await expect.poll(() => scenario.attestationVerifyCounter).toBe(1);
 
-  await page.getByRole('button', { name: 'Clinic: Register' }).click();
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
   await expect.poll(() => scenario.intentPrepareCounter).toBeGreaterThanOrEqual(1);
   await expect.poll(() => scenario.intentSubmitCounter).toBeGreaterThanOrEqual(1);
+  await expect(page.getByText(/commitmentHex/i)).toBeVisible();
 
-  await page.getByRole('button', { name: 'Patient: Redeem' }).click();
+  await page.getByRole('button', { name: 'Redeem Pickup' }).click();
   await expect.poll(() => scenario.intentPrepareCounter).toBe(2);
   await expect.poll(() => scenario.intentSubmitCounter).toBe(2);
+  await expect(page.getByText(/nullifierHex/i)).toBeVisible();
   await expect(page.getByTestId('error-panel')).toHaveCount(0);
 });
 
 test('reject signature: user declines wallet signature request', async ({ page }) => {
-  await boot(page);
+  await boot(page, {}, true);
   await completeAttestation(page, 'asset1reject');
-  await expect(page.getByText('Attestation: verified')).toBeVisible();
 
   await page.evaluate(() => {
-    (window as any).__mockWallet.rejectNextSign = true;
+    const wallet = (window as Window & { __mockWallet?: { rejectNextSign: boolean } }).__mockWallet;
+    if (wallet) wallet.rejectNextSign = true;
   });
-  await page.getByRole('button', { name: 'Clinic: Register' }).click();
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
 
   const errorPanel = page.getByTestId('error-panel');
   await expect(errorPanel).toBeVisible();
@@ -475,11 +584,10 @@ test('reject signature: user declines wallet signature request', async ({ page }
 });
 
 test('tampered signature submit is rejected', async ({ page }) => {
-  await boot(page, { tamperIntentSubmit: true });
+  await boot(page, { tamperIntentSubmit: true }, true);
   await completeAttestation(page, 'asset1tamper');
-  await expect(page.getByText('Attestation: verified')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Clinic: Register' }).click();
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
   const errorPanel = page.getByTestId('error-panel');
   await expect(errorPanel).toBeVisible();
   await expect(errorPanel).toContainText(/signature verification failed/i);
@@ -488,7 +596,8 @@ test('tampered signature submit is rejected', async ({ page }) => {
 });
 
 test('attestation verify fails when ownership check fails', async ({ page }) => {
-  const scenario = await boot(page, { failOwnershipVerify: true });
+  const scenario = await boot(page, { failOwnershipVerify: true }, true);
+  await page.getByRole('link', { name: 'Attestation' }).click();
   await page.getByLabel('Asset Fingerprint').fill('asset1nope');
   await page.getByRole('button', { name: 'Generate attestation challenge' }).click();
   await page.getByRole('button', { name: 'Sign attestation challenge with wallet' }).click();
@@ -502,14 +611,13 @@ test('attestation verify fails when ownership check fails', async ({ page }) => 
 });
 
 test('intent replay submission is blocked', async ({ page }) => {
-  const scenario = await boot(page, { replayOnSecondSubmit: true });
+  const scenario = await boot(page, { replayOnSecondSubmit: true }, true);
   await completeAttestation(page, 'asset1replay');
-  await expect(page.getByText('Attestation: verified')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Clinic: Register' }).click();
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
   await expect(page.getByText(/commitmentHex/i)).toBeVisible({ timeout: 15_000 });
 
-  await page.getByRole('button', { name: 'Clinic: Register' }).click();
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
   await expect.poll(() => scenario.intentSubmitCounter).toBe(2);
   const errorPanel = page.getByTestId('error-panel');
   await expect(errorPanel).toBeVisible();
@@ -517,24 +625,25 @@ test('intent replay submission is blocked', async ({ page }) => {
 });
 
 test('session rehydration restores pending proof execution after refresh', async ({ page }) => {
-  const scenario = await boot(page);
+  const scenario = await boot(page, { slowJobPolls: 8 }, true);
   await completeAttestation(page, 'asset1resume');
-  await expect(page.getByText('Attestation: verified')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Clinic: Register' }).click();
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
   await expect.poll(() => scenario.intentSubmitCounter).toBe(1);
 
   await expect.poll(async () => {
-    return await page.evaluate(() => localStorage.getItem('midlight.pendingJobId'));
+    return await page.evaluate((key) => localStorage.getItem(key), pendingJobStorageKey);
   }).not.toBeNull();
 
   await page.reload();
   await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
-  await expect(page.getByText(/commitmentHex/i)).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('link', { name: 'Prescriptions' }).click();
+  await expect(page.getByText(/commitmentHex/i)).toBeVisible({ timeout: 20_000 });
 });
 
 test('accessibility: keyboard flow, aria labels, focus ring and contrast baseline', async ({ page }) => {
-  const scenario = await boot(page);
+  const scenario = await boot(page, {}, true);
+  await page.getByRole('link', { name: 'Attestation' }).click();
 
   const challengeButton = page.getByRole('button', { name: 'Generate attestation challenge' });
   const signButton = page.getByRole('button', { name: 'Sign attestation challenge with wallet' });
@@ -605,4 +714,95 @@ test('accessibility: keyboard flow, aria labels, focus ring and contrast baselin
   });
 
   expect(ratio).toBeGreaterThan(4.5);
+});
+
+test('mobile viewport layout remains usable at 375px width', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await boot(page, {}, true);
+
+  await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Prescriptions' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect Lace' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+
+  const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  expect(hasOverflow).toBe(false);
+});
+
+test('page navigation across dashboard, attestation, prescriptions, history and wallet', async ({ page }) => {
+  await boot(page, {}, true);
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+
+  await nav.getByRole('link', { name: 'Dashboard', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'DarkWallet' })).toBeVisible();
+
+  await nav.getByRole('link', { name: 'Attestation', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Asset Attestation Wizard' })).toBeVisible();
+
+  await nav.getByRole('link', { name: 'Prescriptions', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Prescription Workflow' })).toBeVisible();
+
+  await nav.getByRole('link', { name: 'History', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Indexed Pickup History' })).toBeVisible();
+
+  await nav.getByRole('link', { name: 'Wallet', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Wallet' })).toBeVisible();
+});
+
+test('wallet disconnect mid-flow blocks intent signing', async ({ page }) => {
+  await boot(page, {}, true);
+  await completeAttestation(page, 'asset1disconnect');
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(page.getByRole('button', { name: 'Connect Lace' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
+  const errorPanel = page.getByTestId('error-panel');
+  await expect(errorPanel).toBeVisible();
+  await expect(errorPanel).toContainText(/wallet not connected/i);
+});
+
+test('API authentication failure is surfaced with diagnostics', async ({ page }) => {
+  const scenario = await boot(page, { requireAuthToken: true }, false, false);
+  await page.getByRole('link', { name: 'Attestation' }).click();
+  await page.getByLabel('Asset Fingerprint').fill('asset1authfail');
+  await page.getByRole('button', { name: 'Generate attestation challenge' }).click();
+
+  await expect.poll(() => scenario.authFailures).toBeGreaterThan(0);
+  const errorPanel = page.getByTestId('error-panel');
+  await expect(errorPanel).toBeVisible();
+  await expect(errorPanel).toContainText(/unauthorized/i);
+  await page.getByTestId('error-details').click();
+  await expect(page.getByText(/stage: attestation-challenge/i)).toBeVisible();
+});
+
+test('expired attestation shows warning and blocks register intent', async ({ page }) => {
+  await boot(page, { expireAttestationOnPrepare: true }, true);
+  const expiredAttestation = {
+    attestationHash: 'attestation-expired',
+    expiresAt: new Date(Date.now() - 120_000).toISOString(),
+    oracleEnvelope: {
+      payload: {
+        assetFingerprint: 'asset1expired',
+      },
+    },
+  };
+  await page.evaluate((value) => {
+    localStorage.setItem('darkwallet.attestation', JSON.stringify(value));
+  }, expiredAttestation);
+
+  await page.reload();
+  const connectButton = page.getByRole('button', { name: 'Connect Lace' });
+  if (await connectButton.count()) {
+    await connectButton.click();
+  } else {
+    await expect(page.getByRole('button', { name: 'Disconnect' })).toBeVisible();
+  }
+  await page.getByRole('link', { name: 'Prescriptions' }).click();
+  await page.getByRole('button', { name: 'New Patient' }).click();
+  await expect(page.getByText(/attestation is expired/i)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Register Authorization' }).click();
+  const errorPanel = page.getByTestId('error-panel');
+  await expect(errorPanel).toBeVisible();
+  await expect(errorPanel).toContainText(/attestation expired/i);
 });

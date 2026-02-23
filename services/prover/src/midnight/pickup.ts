@@ -5,7 +5,7 @@ import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-j
 import { CompiledContract, type ImpureCircuitId } from '@midnight-ntwrk/compact-js';
 import { assertIsContractAddress } from '@midnight-ntwrk/midnight-js-utils';
 
-import { Contract, ledger, pureCircuits, witnesses, type PickupPrivateState } from '@midlight/pickup-contract';
+import { Contract, ledger, pureCircuits, witnesses, type PickupPrivateState } from '@darkwallet/pickup-contract';
 import type { MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 
 import type { PickupIndexStore } from '../state/pickup-index.js';
@@ -42,6 +42,11 @@ const asBigUint64 = (v: string | number) => {
   const asStr = typeof v === 'number' ? String(v) : v;
   if (!/^[0-9]+$/.test(asStr)) throw new Error('rxId must be a base-10 integer string');
   return BigInt(asStr);
+};
+
+const asBigUint64OrZero = (v?: string | number | null) => {
+  if (v == null || v === '') return 0n;
+  return asBigUint64(v);
 };
 
 const normalizeContractAddress = (s: string) => {
@@ -132,6 +137,7 @@ export class PickupService {
 
       const deployed = await deployContract(this.#providers, {
         compiledContract: this.#compiledContract,
+        args: [],
         privateStateId: CLINIC_ID,
         initialPrivateState,
       });
@@ -183,6 +189,7 @@ export class PickupService {
 
     const authorizations = toHexArray((state as any).authorizations);
     const spent = toHexArray((state as any).spent);
+    const revoked = toHexArray((state as any).revoked);
 
     return {
       issuerPublicKeyHex,
@@ -196,6 +203,11 @@ export class PickupService {
         values: spent.slice(0, 50),
         truncated: spent.length > 50,
       },
+      revoked: {
+        count: revoked.length,
+        values: revoked.slice(0, 50),
+        truncated: revoked.length > 50,
+      },
     };
   }
 
@@ -205,6 +217,7 @@ export class PickupService {
     patientId?: string;
     patientPublicKeyHex?: string;
     attestationHash?: string;
+    expiresAt?: string | number;
   }) {
     const state = await this.#store.read();
     if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
@@ -229,14 +242,16 @@ export class PickupService {
     });
 
     const rxId = asBigUint64(params.rxId);
+    const expiresAt = asBigUint64OrZero(params.expiresAt);
     const pharmacyId = asBytes32(params.pharmacyIdHex);
     const oracleAttestationHash = asBytes32OrZero(params.attestationHash);
-    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash);
+    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAt);
 
-    const tx = await joined.callTx.registerAuthorization(rxId, pharmacyId, patientPk, oracleAttestationHash);
+    const tx = await joined.callTx.registerAuthorization(rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAt);
     const out = {
       commitmentHex: bytesToHex(commitment),
       attestationHashHex: bytesToHex(oracleAttestationHash),
+      expiresAt: expiresAt.toString(10),
       rxId: rxId.toString(10),
       pharmacyIdHex: bytesToHex(pharmacyId),
       patientPublicKeyHex: bytesToHex(patientPk),
@@ -247,6 +262,7 @@ export class PickupService {
     await this.#pickupIndex.recordAuthorization({
       contractAddress: out.contractAddress,
       commitmentHex: out.commitmentHex,
+      expiresAt: out.expiresAt,
       rxId: out.rxId,
       pharmacyIdHex: out.pharmacyIdHex,
       patientPublicKeyHex: out.patientPublicKeyHex,
@@ -256,7 +272,13 @@ export class PickupService {
     return out;
   }
 
-  async redeem(params: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string }) {
+  async redeem(params: {
+    patientId: string;
+    rxId: string | number;
+    pharmacyIdHex: string;
+    attestationHash?: string;
+    expiresAt?: string | number;
+  }) {
     const state = await this.#store.read();
     if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
 
@@ -264,11 +286,12 @@ export class PickupService {
     if (!p) throw new Error('Unknown patientId');
 
     const rxId = asBigUint64(params.rxId);
+    const expiresAt = asBigUint64OrZero(params.expiresAt);
     const pharmacyId = asBytes32(params.pharmacyIdHex);
     const patientSk = asBytes32(p.patientSecretKeyHex);
     const patientPk = pureCircuits.patientPublicKey(patientSk);
     const oracleAttestationHash = asBytes32OrZero(params.attestationHash);
-    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash);
+    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash, expiresAt);
 
     const joined = await findDeployedContract(this.#providers, {
       contractAddress: state.contractAddress,
@@ -277,11 +300,12 @@ export class PickupService {
       initialPrivateState: makePrivateState({ issuerSecretKey: zeroBytes(32), patientSecretKey: patientSk }),
     });
 
-    const tx = await joined.callTx.redeem(rxId, pharmacyId, oracleAttestationHash);
+    const tx = await joined.callTx.redeem(rxId, pharmacyId, oracleAttestationHash, expiresAt);
     const out = {
       patientPublicKeyHex: bytesToHex(patientPk),
       nullifierHex: bytesToHex(nullifier),
       attestationHashHex: bytesToHex(oracleAttestationHash),
+      expiresAt: expiresAt.toString(10),
       rxId: rxId.toString(10),
       pharmacyIdHex: bytesToHex(pharmacyId),
       txId: tx.public.txId,
@@ -300,7 +324,13 @@ export class PickupService {
     return out;
   }
 
-  async check(params: { patientId: string; rxId: string | number; pharmacyIdHex: string; attestationHash?: string }) {
+  async check(params: {
+    patientId: string;
+    rxId: string | number;
+    pharmacyIdHex: string;
+    attestationHash?: string;
+    expiresAt?: string | number;
+  }) {
     const state = await this.#store.read();
     if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
 
@@ -308,17 +338,19 @@ export class PickupService {
     if (!p) throw new Error('Unknown patientId');
 
     const rxId = asBigUint64(params.rxId);
+    const expiresAt = asBigUint64OrZero(params.expiresAt);
     const pharmacyId = asBytes32(params.pharmacyIdHex);
     const patientPk = asBytes32(p.patientPublicKeyHex);
     const oracleAttestationHash = asBytes32OrZero(params.attestationHash);
-    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash);
-    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash);
+    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAt);
+    const nullifier = pureCircuits.redemptionNullifier(patientPk, rxId, pharmacyId, oracleAttestationHash, expiresAt);
 
     const ledgerState = await this.getLedgerState();
     if (!ledgerState) return { authorizationFound: false, redeemed: false };
 
     const authSet: any = (ledgerState as any).authorizations;
     const spentSet: any = (ledgerState as any).spent;
+    const revokedSet: any = (ledgerState as any).revoked;
 
     const has = (setLike: any, value: Uint8Array): boolean => {
       if (!setLike) return false;
@@ -334,9 +366,68 @@ export class PickupService {
       commitmentHex: bytesToHex(commitment),
       nullifierHex: bytesToHex(nullifier),
       attestationHashHex: bytesToHex(oracleAttestationHash),
+      expiresAt: expiresAt.toString(10),
       authorizationFound: has(authSet, commitment),
+      revoked: has(revokedSet, commitment),
       redeemed: has(spentSet, nullifier),
+      expiredByClientClock: expiresAt > 0n ? BigInt(Date.now()) > expiresAt : false,
       issuerPublicKeyHex: (ledgerState as any).issuer_pk?.is_some ? bytesToHex((ledgerState as any).issuer_pk.value) : null,
+    };
+  }
+
+  async revokeAuthorization(params: {
+    rxId: string | number;
+    pharmacyIdHex: string;
+    patientId?: string;
+    patientPublicKeyHex?: string;
+    attestationHash?: string;
+    expiresAt?: string | number;
+  }) {
+    const state = await this.#store.read();
+    if (!state.contractAddress) throw new Error('No contract deployed/joined yet');
+
+    const clinicSk = await this.#ensureClinicSecretKey();
+    const patientPk =
+      params.patientPublicKeyHex != null
+        ? asBytes32(params.patientPublicKeyHex)
+        : (() => {
+            if (!params.patientId) throw new Error('patientId or patientPublicKeyHex required');
+            const p = state.patients?.[params.patientId];
+            if (!p) throw new Error('Unknown patientId');
+            return asBytes32(p.patientPublicKeyHex);
+          })();
+
+    const joined = await findDeployedContract(this.#providers, {
+      contractAddress: state.contractAddress,
+      compiledContract: this.#compiledContract,
+      privateStateId: CLINIC_ID,
+      initialPrivateState: makePrivateState({ issuerSecretKey: clinicSk, patientSecretKey: zeroBytes(32) }),
+    });
+
+    const rxId = asBigUint64(params.rxId);
+    const expiresAt = asBigUint64OrZero(params.expiresAt);
+    const pharmacyId = asBytes32(params.pharmacyIdHex);
+    const oracleAttestationHash = asBytes32OrZero(params.attestationHash);
+    const commitment = pureCircuits.authorizationCommitment(rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAt);
+
+    const tx = await joined.callTx.revokeAuthorization(rxId, pharmacyId, patientPk, oracleAttestationHash, expiresAt);
+    await this.#pickupIndex.recordRevocation({
+      contractAddress: joined.deployTxData.public.contractAddress,
+      commitmentHex: bytesToHex(commitment),
+      txId: tx.public.txId,
+      blockHeight: tx.public.blockHeight,
+    });
+
+    return {
+      commitmentHex: bytesToHex(commitment),
+      attestationHashHex: bytesToHex(oracleAttestationHash),
+      expiresAt: expiresAt.toString(10),
+      rxId: rxId.toString(10),
+      pharmacyIdHex: bytesToHex(pharmacyId),
+      patientPublicKeyHex: bytesToHex(patientPk),
+      txId: tx.public.txId,
+      blockHeight: tx.public.blockHeight,
+      contractAddress: joined.deployTxData.public.contractAddress,
     };
   }
 }

@@ -1,127 +1,157 @@
-# Midlight
+# DarkWallet
 
-Privacy-preserving prescription pickup demo using **Midnight Compact** contracts and **real ZK proofs** (via the Midnight proof server).
+DarkWallet is a privacy-preserving prescription authorization and pickup application for the Midnight + Cardano ecosystem.  
+It combines:
+- Midnight Compact ZK circuits (`pickup.compact`)
+- Cardano asset attestations (CIP-30 signatures + Blockfrost ownership checks)
+- Relayer-safe intent signing + queue-based execution
+- A route-based React app with wallet self-custody
 
-Use-case (demo):
-1. A clinic registers an authorization for `(rxId, pharmacyId, patientPublicKey)` on-chain.
-2. A patient redeems without revealing identity: they prove they control the patient secret key corresponding to the public key committed into the authorization.
-3. A nullifier prevents double redemption.
+## Architecture
 
-This is intentionally a hackable reference implementation, not production logic.
+```mermaid
+flowchart LR
+  UI["React App (Vite)\nWalletProvider + Zustand + React Query"]
+  API["Prover API (Fastify)\nAuth + Attestation + Intent Endpoints"]
+  Q["BullMQ + Redis\nAsync ZK Job Queue"]
+  W["Worker Process\nProof + Tx Build + Relay"]
+  DB["PostgreSQL\nState/Intent/Attestation/Audit/Index Stores"]
+  MID["Midnight Network\nCompact Contract + Ledger State"]
+  CAR["Cardano Network\nCIP-30 Wallet + Blockfrost"]
 
-## Repo Layout
+  UI -->|REST + SSE| API
+  UI -->|CIP-30 signData| CAR
+  API -->|Enqueue| Q
+  W -->|Consume jobs| Q
+  API --> DB
+  W --> DB
+  W --> MID
+  API -->|ownership checks| CAR
+```
 
-- `midnight/contract/` Compact smart contract + generated ZK assets (generated into `src/managed/**`).
-- `services/prover/` Node.js service that builds/signs/submits Midnight transactions and talks to the proof server.
-- `/src/` Vite + React UI that calls the prover service.
+## Monorepo Layout
 
-## Prerequisites
+- `midnight/contract`: Compact contract source, managed artifacts, simulator tests
+- `services/prover`: Fastify API, BullMQ worker, attestation/intent services, persistent stores
+- `src`: Route-based frontend (`/`, `/attestation`, `/prescriptions`, `/history`, `/wallet`, `/dev`)
+- `e2e`: Playwright suites (happy path + adversarial + accessibility + resilience)
+- `docs`: API and security references
 
-- Node.js `>=22`
-- Docker + Docker Compose
-- `npm`
+## Quick Start (Standalone)
 
-## Quickstart (Local Standalone Network)
-
-1. Install deps:
+1. Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. Start local infrastructure (Midnight node + indexer + proof server + Redis + PostgreSQL):
+2. Start local infrastructure:
 
 ```bash
 docker compose -f services/prover/standalone.yml up -d
 ```
 
-3. Start the demo (compiles the contract + starts prover + starts web):
+3. Configure env (minimum for local):
 
 ```bash
-export MIDLIGHT_REDIS_URL=redis://127.0.0.1:6379
-export MIDLIGHT_DATABASE_URL=postgres://midlight:midlight@127.0.0.1:5432/midlight
-# Optional in standalone; required outside standalone
-export MIDLIGHT_API_SECRET=change-me
-export MIDLIGHT_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+cp services/prover/.env.example services/prover/.env
+```
+
+4. Start full app (contract build + prover + web):
+
+```bash
 npm run dev:demo
 ```
 
-Open the UI at `http://127.0.0.1:3000`.
+5. Open:
+- Web UI: `http://127.0.0.1:3000`
+- API: `http://127.0.0.1:4000`
 
-Notes:
-- ZK proof generation can take a long time on laptops. The UI uses background jobs (`BullMQ`) and streams stage updates using Server-Sent Events (`/api/jobs/:id/events`).
-- Redis is a hard runtime dependency for the BullMQ queue (`MIDLIGHT_REDIS_URL`).
-- If you see `Failed to connect to Proof Server: Transport error`, bump timeouts (see below).
+## Production Deployment
 
-## What’s “Real” Here
-
-- Proof generation is done by the **Midnight proof server** (no deterministic/stub proofs).
-- Transactions are created, balanced, signed, and submitted using the Midnight wallet SDKs.
-
-## Local State
-
-The prover service persists demo state in PostgreSQL when `MIDLIGHT_DATABASE_URL` is set.
-If not set, it falls back to local file storage.
-
-- `services/prover/.data/state.json` contains the deployed contract address and demo secrets.
-- `services/prover/midlight-private-state*` is the LevelDB-backed private state store used by midnight-js.
-
-These paths are gitignored.
-
-## Configuration
-
-Prover service env vars:
-
-- `MIDLIGHT_HTTP_TIMEOUT_MS` (default: 1 hour)
-- `MIDLIGHT_REDIS_URL` (default: `redis://127.0.0.1:6379`)
-- `MIDLIGHT_DATABASE_URL` (optional, enables persistent pickup/job index in PostgreSQL)
-- `MIDLIGHT_API_SECRET` (optional in standalone, required for non-standalone deployments)
-- `MIDLIGHT_ENCRYPTION_KEY` (optional in standalone, required for non-standalone deployments; 32-byte hex key for secret encryption at rest)
-- `MIDLIGHT_ORACLE_PRIVATE_KEY` (required for non-standalone deployments)
-  - Used to increase the underlying Node fetch/undici timeouts for long-running `/prove` requests.
-  - Example:
+Use the production stack:
 
 ```bash
-MIDLIGHT_HTTP_TIMEOUT_MS=$((2*60*60*1000)) npm -w services/prover run dev
+docker compose -f docker-compose.production.yml up --build
 ```
 
-Docker proof-server tuning (edit `services/prover/standalone.yml`, then recreate just the proof-server):
+Included services:
+- `prover` (Fastify API + worker runtime image)
+- `redis` (BullMQ backend)
+- `postgres` (persistent stores)
+- `nginx` (TLS/static/web reverse proxy)
 
-```bash
-docker compose -f services/prover/standalone.yml up -d --force-recreate --no-deps proof-server
-```
+## Configuration Model
 
-## Realtime Job API
+DarkWallet accepts legacy `MIDLIGHT_*` env vars and modern `DARKWALLET_*` aliases (legacy keys log deprecation warnings).
 
-- `POST /api/jobs/deploy`
-- `POST /api/jobs/register`
-- `POST /api/jobs/redeem`
+Core required values outside standalone:
+- `MIDNIGHT_NETWORK=preview|preprod|mainnet`
+- `MIDNIGHT_WALLET_SEED`
+- `MIDLIGHT_API_SECRET` or `DARKWALLET_API_SECRET`
+- `MIDLIGHT_ENCRYPTION_KEY` or `DARKWALLET_ENCRYPTION_KEY`
+- `MIDLIGHT_ORACLE_PRIVATE_KEY` or `DARKWALLET_ORACLE_PRIVATE_KEY`
+
+Mainnet additionally requires:
+- `MIDLIGHT_DATABASE_URL` or `DARKWALLET_DATABASE_URL`
+- `BLOCKFROST_PROJECT_ID`
+
+See:
+- `services/prover/.env.example`
+- `docs/SECURITY.md`
+
+## Frontend Routes
+
+- `/`: dashboard
+- `/attestation`: challenge/sign/verify Cardano asset attestation wizard
+- `/prescriptions`: register/redeem/check flow with job pipeline tracking
+- `/history`: indexed pickup ledger table
+- `/wallet`: wallet details and connection controls
+- `/dev`: developer/admin operations (clinic init, deploy/join, state read)
+
+## API Surface
+
+Core endpoints:
+- `GET /api/health`
+- `POST /api/v1/attestations/challenge`
+- `POST /api/v1/attestations/verify`
+- `GET /api/v1/attestations/:attestationHash`
+- `POST /api/v1/intents/prepare`
+- `POST /api/v1/intents/submit`
 - `GET /api/jobs/:jobId`
-- `GET /api/jobs/:jobId/events` (SSE stream for stage transitions)
-- `GET /api/pickups` (PostgreSQL-backed pickup index)
-
-Versioned aliases:
-
-- `POST /api/v1/jobs/deploy`
-- `POST /api/v1/jobs/register`
-- `POST /api/v1/jobs/redeem`
-- `GET /api/v1/jobs/:jobId`
-- `GET /api/v1/jobs/:jobId/events`
+- `GET /api/jobs/:jobId/events` (SSE)
 - `GET /api/v1/pickups`
 
-Attestation scaffolding:
+Full reference: `docs/API.md`.
 
-- `POST /api/attestations/challenge`
-- `POST /api/attestations/verify`
+## Security Model Highlights
 
-## Environment Template
+- Browser wallet self-custody (backend never receives private keys)
+- Signed intent submission with nonce replay protection
+- Oracle-signed attestation envelope binding L1 ownership proofs
+- API bearer auth with SSE token support
+- Secret encryption at rest (`AES-256-GCM`) in file and PostgreSQL stores
+- Nullifier replay prevention in Compact contract
 
-Use `services/prover/.env.example` as the baseline for local and deployment configuration.
+See: `docs/SECURITY.md`.
 
-## E2E Tests
+## Quality Gates
 
-Run Playwright end-to-end tests:
+Run all local checks:
 
 ```bash
+npm run lint
+npm run typecheck
+npm test
+npm run test:sim
 npm run test:e2e
+npm run build
 ```
+
+## Current Status
+
+- TypeScript frontend with route-based UX
+- BullMQ + Redis asynchronous proving/relay pipeline
+- Cardano attestation verification path with challenge lifecycle
+- Relayer intent prepare/submit flow with replay protection
+- 12-scenario Playwright matrix including adversarial and resilience paths

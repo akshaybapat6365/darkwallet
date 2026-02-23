@@ -27,6 +27,7 @@ const registerSchema = z
     patientId: z.string().uuid().optional(),
     patientPublicKeyHex: hex32.optional(),
     attestationHash: z.string().optional(),
+    expiresAt: rxIdSchema.optional(),
   })
   .refine((v) => v.patientId != null || v.patientPublicKeyHex != null, {
     message: 'patientId or patientPublicKeyHex required',
@@ -38,6 +39,7 @@ const redeemSchema = z.object({
   rxId: rxIdSchema,
   pharmacyIdHex: hex32,
   attestationHash: z.string().optional(),
+  expiresAt: rxIdSchema.optional(),
 });
 
 const toErrorEnvelope = (err: unknown, requestId: string) => {
@@ -226,6 +228,11 @@ export const buildServer = async (params: {
     return await params.pickup.registerAuthorization(body);
   });
 
+  app.post('/api/clinic/revoke', async (req) => {
+    const body = registerSchema.parse(req.body);
+    return await params.pickup.revokeAuthorization(body);
+  });
+
   app.post('/api/patient/redeem', async (req) => {
     if (params.config.enableIntentSigning && !params.config.allowLegacyJobEndpoints) {
       fail(410, 'Legacy redeem endpoint disabled. Use /api/v1/intents/prepare and /api/v1/intents/submit.');
@@ -241,6 +248,7 @@ export const buildServer = async (params: {
         rxId: rxIdSchema,
         pharmacyIdHex: hex32,
         attestationHash: z.string().optional(),
+        expiresAt: rxIdSchema.optional(),
       })
       .parse(req.body);
     return await params.pickup.check(body);
@@ -343,7 +351,7 @@ export const buildServer = async (params: {
 
   app.post('/api/v1/intents/prepare', async (req) => {
     const body = intentPrepareSchema.parse(req.body);
-    const out = await params.intents.prepareIntent(body as any);
+    const out = await params.intents.prepareIntent(body);
     await params.auditStore.record({
       requestId: req.id,
       eventType: 'intent.prepared',
@@ -430,6 +438,11 @@ export const buildServer = async (params: {
   app.post('/api/v1/jobs/redeem', async (req) => {
     const body = redeemSchema.parse(req.body);
     return await params.jobs.enqueueRedeem(body);
+  });
+
+  app.post('/api/v1/clinic/revoke', async (req) => {
+    const body = registerSchema.parse(req.body);
+    return await params.pickup.revokeAuthorization(body);
   });
 
   app.get<{ Params: { jobId: string } }>('/api/v1/jobs/:jobId', async (req) => {

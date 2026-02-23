@@ -16,6 +16,7 @@ type RegisterIntentInput = {
   patientId?: string;
   patientPublicKeyHex?: string;
   attestationHash?: string;
+  expiresAt?: string | number;
 };
 
 type RedeemIntentInput = {
@@ -23,6 +24,7 @@ type RedeemIntentInput = {
   rxId: string | number;
   pharmacyIdHex: string;
   attestationHash?: string;
+  expiresAt?: string | number;
 };
 
 export type PrepareIntentRequest =
@@ -92,6 +94,7 @@ export class IntentService {
       pharmacyIdHex: normalized.pharmacyIdHex,
       patientPublicKeyHex: normalized.patientPublicKeyHex,
       attestationHash: normalized.attestationHash ?? null,
+      authorizationExpiresAt: normalized.authorizationExpiresAt ?? null,
       nonce,
       issuedAt,
       expiresAt,
@@ -206,6 +209,7 @@ export class IntentService {
     pharmacyIdHex: string;
     patientPublicKeyHex: string;
     attestationHash?: string;
+    authorizationExpiresAt?: string;
     requestBody: Record<string, unknown>;
   } {
     if (req.action === 'registerAuthorization') {
@@ -224,12 +228,14 @@ export class IntentService {
         pharmacyIdHex: req.body.pharmacyIdHex,
         patientPublicKeyHex: resolvedPatientPk,
         attestationHash: req.body.attestationHash,
+        authorizationExpiresAt: req.body.expiresAt != null ? String(req.body.expiresAt) : undefined,
         requestBody: {
           rxId: req.body.rxId,
           pharmacyIdHex: req.body.pharmacyIdHex,
           patientId: req.body.patientId,
           patientPublicKeyHex: resolvedPatientPk,
           attestationHash: req.body.attestationHash,
+          expiresAt: req.body.expiresAt,
         },
       };
     }
@@ -241,11 +247,13 @@ export class IntentService {
       pharmacyIdHex: req.body.pharmacyIdHex,
       patientPublicKeyHex: patient.patientPublicKeyHex,
       attestationHash: req.body.attestationHash,
+      authorizationExpiresAt: req.body.expiresAt != null ? String(req.body.expiresAt) : undefined,
       requestBody: {
         patientId: req.body.patientId,
         rxId: req.body.rxId,
         pharmacyIdHex: req.body.pharmacyIdHex,
         attestationHash: req.body.attestationHash,
+        expiresAt: req.body.expiresAt,
       },
     };
   }

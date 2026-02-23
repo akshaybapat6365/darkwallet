@@ -21,7 +21,7 @@ export const AppHeader = ({ health }: AppHeaderProps) => {
     <header className="border-b border-border/60 bg-card/70 backdrop-blur-xl">
       <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 md:grid-cols-[1fr_auto_auto] md:items-center">
         <div>
-          <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Midlight Protocol</div>
+          <div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">DarkWallet</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Shielded Prescription Pickup</h1>
           <div className="mt-1 text-sm text-muted-foreground">
             Commitment ledger on Midnight with nullifier-protected redemption

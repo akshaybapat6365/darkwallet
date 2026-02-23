@@ -108,6 +108,20 @@ const normalizeHexKey = (raw: string | undefined, envName: string): string | und
   return clean;
 };
 
+const readCompatEnv = (legacyName: string, modernName: string): string | undefined => {
+  const modernValue = process.env[modernName];
+  if (modernValue != null && modernValue.trim() !== '') return modernValue;
+
+  const legacyValue = process.env[legacyName];
+  if (legacyValue != null && legacyValue.trim() !== '') {
+    // eslint-disable-next-line no-console
+    console.warn(`[config] ${legacyName} is deprecated; use ${modernName}`);
+    return legacyValue;
+  }
+
+  return undefined;
+};
+
 export const loadConfig = (repoRoot: string): AppConfig => {
   const network = parseNetwork(process.env.MIDNIGHT_NETWORK);
 
@@ -147,17 +161,45 @@ export const loadConfig = (repoRoot: string): AppConfig => {
     };
   })();
 
-  const zkConfigPath = process.env.MIDLIGHT_ZK_CONFIG_PATH
-    ? path.resolve(process.env.MIDLIGHT_ZK_CONFIG_PATH)
+  const zkConfigPathRaw = readCompatEnv('MIDLIGHT_ZK_CONFIG_PATH', 'DARKWALLET_ZK_CONFIG_PATH');
+  const statePathRaw = readCompatEnv('MIDLIGHT_STATE_PATH', 'DARKWALLET_STATE_PATH');
+
+  const zkConfigPath = zkConfigPathRaw
+    ? path.resolve(zkConfigPathRaw)
     : path.resolve(repoRoot, 'midnight', 'contract', 'src', 'managed', 'pickup');
 
-  const statePath = process.env.MIDLIGHT_STATE_PATH
-    ? path.resolve(process.env.MIDLIGHT_STATE_PATH)
+  const statePath = statePathRaw
+    ? path.resolve(statePathRaw)
     : path.resolve(repoRoot, 'services', 'prover', '.data', 'state.json');
 
-  return {
+  const processRoleRaw = readCompatEnv('MIDLIGHT_PROCESS_ROLE', 'DARKWALLET_PROCESS_ROLE');
+  const redisUrlRaw = readCompatEnv('MIDLIGHT_REDIS_URL', 'DARKWALLET_REDIS_URL');
+  const databaseUrlRaw = readCompatEnv('MIDLIGHT_DATABASE_URL', 'DARKWALLET_DATABASE_URL');
+  const minL1AdaRaw = readCompatEnv('MIDLIGHT_MIN_L1_ADA_LOVELACE', 'DARKWALLET_MIN_L1_ADA_LOVELACE');
+  const enforceAttestationRaw = readCompatEnv(
+    'MIDLIGHT_ENABLE_ATTESTATION_ENFORCEMENT',
+    'DARKWALLET_ENABLE_ATTESTATION_ENFORCEMENT',
+  );
+  const enableIntentSigningRaw = readCompatEnv('MIDLIGHT_ENABLE_INTENT_SIGNING', 'DARKWALLET_ENABLE_INTENT_SIGNING');
+  const allowLegacyRaw = readCompatEnv('MIDLIGHT_ALLOW_LEGACY_JOB_ENDPOINTS', 'DARKWALLET_ALLOW_LEGACY_JOB_ENDPOINTS');
+  const oraclePrivateKeyRaw = readCompatEnv('MIDLIGHT_ORACLE_PRIVATE_KEY', 'DARKWALLET_ORACLE_PRIVATE_KEY');
+  const oraclePublicKeyRaw = readCompatEnv('MIDLIGHT_ORACLE_PUBLIC_KEY', 'DARKWALLET_ORACLE_PUBLIC_KEY');
+  const oracleDomainRaw = readCompatEnv('MIDLIGHT_ORACLE_DOMAIN_TAG', 'DARKWALLET_ORACLE_DOMAIN_TAG');
+  const gasSlotCountRaw = readCompatEnv('MIDLIGHT_RELAYER_GAS_SLOT_COUNT', 'DARKWALLET_RELAYER_GAS_SLOT_COUNT');
+  const gasSlotValueRaw = readCompatEnv(
+    'MIDLIGHT_RELAYER_GAS_SLOT_VALUE_DUST',
+    'DARKWALLET_RELAYER_GAS_SLOT_VALUE_DUST',
+  );
+  const gasLeaseRaw = readCompatEnv('MIDLIGHT_RELAYER_GAS_LEASE_TTL_MS', 'DARKWALLET_RELAYER_GAS_LEASE_TTL_MS');
+  const jobConcurrencyRaw = readCompatEnv('MIDLIGHT_JOB_CONCURRENCY', 'DARKWALLET_JOB_CONCURRENCY');
+  const apiSecretRaw = readCompatEnv('MIDLIGHT_API_SECRET', 'DARKWALLET_API_SECRET');
+  const encryptionKeyRaw = readCompatEnv('MIDLIGHT_ENCRYPTION_KEY', 'DARKWALLET_ENCRYPTION_KEY');
+  const tlsCertRaw = readCompatEnv('MIDLIGHT_TLS_CERT', 'DARKWALLET_TLS_CERT');
+  const tlsKeyRaw = readCompatEnv('MIDLIGHT_TLS_KEY', 'DARKWALLET_TLS_KEY');
+
+  const config: AppConfig = {
     network,
-    processRole: parseProcessRole(process.env.MIDLIGHT_PROCESS_ROLE),
+    processRole: parseProcessRole(processRoleRaw),
     port: parsePort(process.env.PORT),
     indexerHttpUrl: requireUrl(process.env.MIDNIGHT_INDEXER_HTTP ?? defaults.indexerHttpUrl, 'MIDNIGHT_INDEXER_HTTP'),
     indexerWsUrl: requireUrl(process.env.MIDNIGHT_INDEXER_WS ?? defaults.indexerWsUrl, 'MIDNIGHT_INDEXER_WS'),
@@ -166,30 +208,45 @@ export const loadConfig = (repoRoot: string): AppConfig => {
       process.env.MIDNIGHT_PROOF_SERVER_HTTP ?? defaults.proofServerHttpUrl,
       'MIDNIGHT_PROOF_SERVER_HTTP',
     ),
-    redisUrl: process.env.MIDLIGHT_REDIS_URL ?? 'redis://127.0.0.1:6379',
-    databaseUrl: process.env.MIDLIGHT_DATABASE_URL,
+    redisUrl: redisUrlRaw ?? 'redis://127.0.0.1:6379',
+    databaseUrl: databaseUrlRaw,
     blockfrostProjectId: process.env.BLOCKFROST_PROJECT_ID,
     blockfrostBaseUrl: process.env.BLOCKFROST_BASE_URL,
     attestationTtlMs: parsePositiveInt(process.env.ATTESTATION_TTL_MS, 5 * 60 * 1000),
     attestationMaxClockSkewMs: parsePositiveInt(process.env.ATTESTATION_MAX_CLOCK_SKEW_MS, 30_000),
     attestationProofValidityMs: parsePositiveInt(process.env.ATTESTATION_PROOF_VALIDITY_MS, 24 * 60 * 60 * 1000),
-    minL1AdaLovelace: parsePositiveBigInt(process.env.MIDLIGHT_MIN_L1_ADA_LOVELACE, 5_000_000n),
-    enableAttestationEnforcement: parseBool(process.env.MIDLIGHT_ENABLE_ATTESTATION_ENFORCEMENT, false),
-    enableIntentSigning: parseBool(process.env.MIDLIGHT_ENABLE_INTENT_SIGNING, network !== 'standalone'),
-    allowLegacyJobEndpoints: parseBool(process.env.MIDLIGHT_ALLOW_LEGACY_JOB_ENDPOINTS, network === 'standalone'),
-    oraclePrivateKeyHex: process.env.MIDLIGHT_ORACLE_PRIVATE_KEY,
-    oraclePublicKeyHex: process.env.MIDLIGHT_ORACLE_PUBLIC_KEY,
-    oracleDomainTag: process.env.MIDLIGHT_ORACLE_DOMAIN_TAG ?? 'midlight:oracle:v1',
-    relayerGasSlotCount: parsePositiveInt(process.env.MIDLIGHT_RELAYER_GAS_SLOT_COUNT, 64),
-    relayerGasSlotValueDust: parsePositiveBigInt(process.env.MIDLIGHT_RELAYER_GAS_SLOT_VALUE_DUST, 5n),
-    relayerGasLeaseTtlMs: parsePositiveInt(process.env.MIDLIGHT_RELAYER_GAS_LEASE_TTL_MS, 2 * 60 * 1000),
-    jobConcurrency: parsePositiveInt(process.env.MIDLIGHT_JOB_CONCURRENCY, 2),
-    apiSecret: process.env.MIDLIGHT_API_SECRET?.trim() || undefined,
-    encryptionKeyHex: normalizeHexKey(process.env.MIDLIGHT_ENCRYPTION_KEY, 'MIDLIGHT_ENCRYPTION_KEY'),
-    tlsCertPath: process.env.MIDLIGHT_TLS_CERT ? path.resolve(process.env.MIDLIGHT_TLS_CERT) : undefined,
-    tlsKeyPath: process.env.MIDLIGHT_TLS_KEY ? path.resolve(process.env.MIDLIGHT_TLS_KEY) : undefined,
+    minL1AdaLovelace: parsePositiveBigInt(minL1AdaRaw, 5_000_000n),
+    enableAttestationEnforcement: parseBool(enforceAttestationRaw, network === 'mainnet'),
+    enableIntentSigning: parseBool(enableIntentSigningRaw, network !== 'standalone'),
+    allowLegacyJobEndpoints: parseBool(allowLegacyRaw, network === 'standalone'),
+    oraclePrivateKeyHex: oraclePrivateKeyRaw,
+    oraclePublicKeyHex: oraclePublicKeyRaw,
+    oracleDomainTag: oracleDomainRaw ?? 'darkwallet:oracle:v1',
+    relayerGasSlotCount: parsePositiveInt(gasSlotCountRaw, 64),
+    relayerGasSlotValueDust: parsePositiveBigInt(gasSlotValueRaw, 5n),
+    relayerGasLeaseTtlMs: parsePositiveInt(gasLeaseRaw, 2 * 60 * 1000),
+    jobConcurrency: parsePositiveInt(jobConcurrencyRaw, 2),
+    apiSecret: apiSecretRaw?.trim() || undefined,
+    encryptionKeyHex: normalizeHexKey(encryptionKeyRaw, 'MIDLIGHT_ENCRYPTION_KEY / DARKWALLET_ENCRYPTION_KEY'),
+    tlsCertPath: tlsCertRaw ? path.resolve(tlsCertRaw) : undefined,
+    tlsKeyPath: tlsKeyRaw ? path.resolve(tlsKeyRaw) : undefined,
     walletSeedHex: process.env.MIDNIGHT_WALLET_SEED,
     zkConfigPath: requireValue(zkConfigPath, 'MIDLIGHT_ZK_CONFIG_PATH (derived default)'),
     statePath: requireValue(statePath, 'MIDLIGHT_STATE_PATH (derived default)'),
   };
+
+  if (network === 'mainnet') {
+    const required = [
+      ['MIDLIGHT_DATABASE_URL', 'DARKWALLET_DATABASE_URL', config.databaseUrl],
+      ['BLOCKFROST_PROJECT_ID', 'BLOCKFROST_PROJECT_ID', config.blockfrostProjectId],
+      ['MIDNIGHT_WALLET_SEED', 'MIDNIGHT_WALLET_SEED', config.walletSeedHex],
+    ] as const;
+    for (const [legacyName, modernName, value] of required) {
+      if (!value || String(value).trim() === '') {
+        throw new Error(`${legacyName} (or ${modernName}) is required for mainnet`);
+      }
+    }
+  }
+
+  return config;
 };

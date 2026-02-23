@@ -69,9 +69,8 @@ const Field = ({ label, hint, value, onChange, placeholder, mono = false }: Fiel
       {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
     </div>
     <input
-      className={`mt-1 w-full rounded-md border border-input bg-background/60 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-        mono ? 'font-mono' : ''
-      }`}
+      className={`mt-1 w-full rounded-md border border-input bg-background/60 px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${mono ? 'font-mono' : ''
+        }`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
@@ -191,8 +190,8 @@ const labelToBytes32Hex = async (label: string) => {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const pendingJobStorageKey = 'midlight.pendingJobId';
-const pendingIntentStorageKey = 'midlight.pendingIntentId';
+const pendingJobStorageKey = 'darkwallet.pendingJobId';
+const pendingIntentStorageKey = 'darkwallet.pendingIntentId';
 
 const randomHexLine = (length: number) =>
   Array.from({ length }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -349,7 +348,7 @@ export const PickupDemo = ({ onHealth }: PickupDemoProps) => {
         setActiveJobEvent(event);
       });
 
-      for (;;) {
+      for (; ;) {
         const out = await api.job(jobId);
         const job = out.job;
         if (!job) throw new Error('Job not found');
@@ -407,24 +406,24 @@ export const PickupDemo = ({ onHealth }: PickupDemoProps) => {
       api.intentPrepare(
         action === 'registerAuthorization'
           ? {
-              action,
-              body: {
-                rxId,
-                pharmacyIdHex,
-                patientId: selectedPatient.patientId,
-                patientPublicKeyHex: selectedPatient.patientPublicKeyHex,
-                attestationHash: attestation?.attestationHash,
-              },
-            }
-          : {
-              action,
-              body: {
-                patientId: selectedPatient.patientId,
-                rxId,
-                pharmacyIdHex,
-                attestationHash: attestation?.attestationHash,
-              },
+            action,
+            body: {
+              rxId,
+              pharmacyIdHex,
+              patientId: selectedPatient.patientId,
+              patientPublicKeyHex: selectedPatient.patientPublicKeyHex,
+              attestationHash: attestation?.attestationHash,
             },
+          }
+          : {
+            action,
+            body: {
+              patientId: selectedPatient.patientId,
+              rxId,
+              pharmacyIdHex,
+              attestationHash: attestation?.attestationHash,
+            },
+          },
       ),
     );
     localStorage.setItem(pendingIntentStorageKey, prepared.intentId);
@@ -547,7 +546,7 @@ export const PickupDemo = ({ onHealth }: PickupDemoProps) => {
           </div>
           <div>
             4. Optional DB:{' '}
-            <span className="font-mono">MIDLIGHT_DATABASE_URL=postgres://midlight:midlight@127.0.0.1:5432/midlight</span>
+            <span className="font-mono">MIDLIGHT_DATABASE_URL=postgres://darkwallet:darkwallet@127.0.0.1:5432/darkwallet</span>
           </div>
         </CardContent>
       </Card>

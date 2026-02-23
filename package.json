@@ -1,5 +1,5 @@
 {
-  "name": "midlight",
+  "name": "darkwallet",
   "version": "1.0.0",
   "description": "",
   "private": true,
@@ -38,6 +38,8 @@
     "lucide-react": "^0.545.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^7.13.0",
+    "sonner": "^1.7.4",
     "tailwind-merge": "^3.3.0",
     "tailwindcss-animate": "^1.0.7",
     "zustand": "^5.0.8"

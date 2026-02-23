@@ -1,18 +1,27 @@
-import React from 'react';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
-import { AppHeader } from './components/AppHeader';
-import { PickupDemo } from './components/PickupDemo';
-import type { HealthResponse } from './lib/api';
+import { AppShell } from './components/layout/AppShell';
+import { AttestationPage } from './pages/AttestationPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { DevPage } from './pages/DevPage';
+import { HistoryPage } from './pages/HistoryPage';
+import { PrescriptionPage } from './pages/PrescriptionPage';
+import { WalletPage } from './pages/WalletPage';
 
-const App = () => {
-  const [health, setHealth] = React.useState<HealthResponse | null>(null);
-
-  return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader health={health} />
-      <PickupDemo onHealth={setHealth} />
-    </div>
-  );
-};
+const App = () => (
+  <BrowserRouter>
+    <AppShell>
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/attestation" element={<AttestationPage />} />
+        <Route path="/prescriptions" element={<PrescriptionPage />} />
+        <Route path="/history" element={<HistoryPage />} />
+        <Route path="/wallet" element={<WalletPage />} />
+        <Route path="/dev" element={<DevPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AppShell>
+  </BrowserRouter>
+);
 
 export default App;
