@@ -1,0 +1,287 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  --dw-bg: #0f1014;
+  --dw-bg-elevated: #171920;
+  --dw-panel: #1d2028;
+  --dw-border: #2d3039;
+  --dw-text: #f6f4ef;
+  --dw-text-dim: #b7b5ae;
+  --dw-accent: #d7b97a;
+  --dw-accent-strong: #ecc987;
+  --dw-signal: #7ea5ff;
+  --dw-danger: #ff6a6a;
+  --dw-success: #70c4a0;
+  --dw-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  background:
+    radial-gradient(1200px 650px at -5% -20%, rgba(236, 201, 135, 0.09), transparent 60%),
+    radial-gradient(900px 600px at 120% -5%, rgba(126, 165, 255, 0.13), transparent 52%),
+    var(--dw-bg);
+  color: var(--dw-text);
+}
+
+.dw-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.dw-header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--dw-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+}
+
+.dw-brand-kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dw-text-dim);
+}
+
+.dw-brand-title {
+  margin-top: 6px;
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 700;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+
+.dw-brand-sub {
+  margin-top: 4px;
+  color: var(--dw-text-dim);
+  font-size: 13px;
+}
+
+.dw-nav {
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--dw-border);
+  overflow-x: auto;
+}
+
+.dw-nav a {
+  text-decoration: none;
+  color: var(--dw-text-dim);
+  border: 1px solid var(--dw-border);
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dw-nav a.active {
+  color: #15130e;
+  background: var(--dw-accent);
+  border-color: var(--dw-accent);
+}
+
+.dw-main {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.dw-panel {
+  border: 1px solid var(--dw-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.06)), var(--dw-panel);
+  box-shadow: var(--dw-shadow);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.dw-heading {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 20px;
+  margin: 0 0 8px;
+}
+
+.dw-sub {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--dw-text-dim);
+}
+
+.dw-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.dw-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dw-field {
+  display: grid;
+  gap: 6px;
+}
+
+.dw-label {
+  font-size: 12px;
+  color: var(--dw-text-dim);
+}
+
+.dw-input,
+.dw-textarea {
+  width: 100%;
+  border: 1px solid var(--dw-border);
+  background: var(--dw-bg-elevated);
+  color: var(--dw-text);
+  border-radius: 10px;
+  padding: 10px 11px;
+  font-size: 14px;
+}
+
+.dw-textarea {
+  min-height: 92px;
+  resize: vertical;
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.dw-button {
+  border: 1px solid var(--dw-accent);
+  color: #17130a;
+  background: linear-gradient(180deg, var(--dw-accent-strong), var(--dw-accent));
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dw-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dw-button.secondary {
+  background: transparent;
+  color: var(--dw-text);
+  border-color: var(--dw-border);
+}
+
+.dw-inline {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dw-code {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.dw-kv {
+  display: grid;
+  gap: 3px;
+}
+
+.dw-kv-label {
+  color: var(--dw-text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.dw-kv-value {
+  font-size: 13px;
+}
+
+.dw-metric-card {
+  border: 1px solid var(--dw-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.dw-metric-label {
+  font-size: 11px;
+  color: var(--dw-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.dw-metric-value {
+  margin-top: 8px;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 24px;
+}
+
+.dw-metric-foot {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--dw-text-dim);
+}
+
+.dw-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--dw-border);
+  padding: 5px 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dw-badge.success {
+  color: var(--dw-success);
+  border-color: rgba(112, 196, 160, 0.5);
+}
+
+.dw-badge.warn {
+  color: var(--dw-accent);
+  border-color: rgba(215, 185, 122, 0.55);
+}
+
+.dw-badge.error {
+  color: var(--dw-danger);
+  border-color: rgba(255, 106, 106, 0.55);
+}
+
+.dw-error {
+  border: 1px solid rgba(255, 106, 106, 0.5);
+  color: #ffc8c8;
+  background: rgba(255, 106, 106, 0.08);
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.dw-footer {
+  margin-top: auto;
+  padding: 12px 18px 16px;
+  color: var(--dw-text-dim);
+  font-size: 11px;
+  border-top: 1px solid var(--dw-border);
+}
+
+@media (min-width: 900px) {
+  .dw-main.dw-main-full {
+    grid-template-columns: 1.1fr 1fr;
+    gap: 16px;
+  }
+
+  .dw-main.dw-main-full > * {
+    align-self: start;
+  }
+}

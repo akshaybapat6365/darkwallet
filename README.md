@@ -34,6 +34,7 @@ flowchart LR
 - `midnight/contract`: Compact contract source, managed artifacts, simulator tests
 - `services/prover`: Fastify API, BullMQ worker, attestation/intent services, persistent stores
 - `src`: Route-based frontend (`/`, `/attestation`, `/prescriptions`, `/history`, `/wallet`, `/dev`)
+- `apps/extension`: Manifest V3 Chrome extension (`popup`, `fullpage`, `background`, `content-script`, `injected CIP-30`)
 - `e2e`: Playwright suites (happy path + adversarial + accessibility + resilience)
 - `docs`: API and security references
 
@@ -66,6 +67,18 @@ npm run dev:demo
 5. Open:
 - Web UI: `http://127.0.0.1:3000`
 - API: `http://127.0.0.1:4000`
+
+6. Extension workspace (optional, parallel track):
+
+```bash
+npm run dev:extension
+```
+
+Then load unpacked extension from `apps/extension/dist` after running:
+
+```bash
+npm run build:extension
+```
 
 ## Production Deployment
 

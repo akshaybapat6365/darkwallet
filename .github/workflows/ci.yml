@@ -94,10 +94,15 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run build
+      - run: npm run build:extension
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-dist
+          path: apps/extension/dist/
 
   docker:
     runs-on: ubuntu-latest

@@ -16,3 +16,6 @@ node_modules
 /playwright-report/
 /test-results/
 /coverage/
+
+# Extension artifacts
+/apps/extension/dist/
